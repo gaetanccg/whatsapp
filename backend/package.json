@@ -1,0 +1,28 @@
+{
+  "name": "whatsapp-clone-backend",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch server.js",
+    "start": "node server.js",
+    "test": "NODE_ENV=test c8 mocha --timeout 10000 --exit tests/**/*.test.js",
+    "test:coverage": "c8 report --reporter=text-lcov"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "mongoose": "^8.0.3",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2",
+    "socket.io": "^4.6.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "@sentry/node": "^7.99.0"
+  },
+  "devDependencies": {
+    "mocha": "^10.2.0",
+    "chai": "^4.3.10",
+    "supertest": "^6.3.3",
+    "c8": "^9.0.0",
+    "socket.io-client": "^4.6.1"
+  }
+}

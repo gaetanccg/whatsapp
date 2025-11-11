@@ -1,0 +1,193 @@
+import { defineStore } from 'pinia';
+import { authAPI, conversationAPI, messageAPI, userAPI } from '../services/api.js';
+import socketService from '../services/socket.js';
+
+export const useAuthStore = defineStore('auth', {
+  state: () => ({
+    user: JSON.parse(localStorage.getItem('user')) || null,
+    token: localStorage.getItem('token') || null,
+    isAuthenticated: !!localStorage.getItem('token')
+  }),
+
+  actions: {
+    async register(userData) {
+      const response = await authAPI.register(userData);
+      this.setAuth(response.data);
+      return response.data;
+    },
+
+    async login(credentials) {
+      const response = await authAPI.login(credentials);
+      this.setAuth(response.data);
+      return response.data;
+    },
+
+    async fetchUser() {
+      const response = await authAPI.getMe();
+      this.user = response.data;
+      localStorage.setItem('user', JSON.stringify(response.data));
+    },
+
+    setAuth(data) {
+      this.user = data;
+      this.token = data.token;
+      this.isAuthenticated = true;
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data));
+      socketService.connect(data.token);
+    },
+
+    logout() {
+      this.user = null;
+      this.token = null;
+      this.isAuthenticated = false;
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      socketService.disconnect();
+    }
+  }
+});
+
+export const useChatStore = defineStore('chat', {
+  state: () => ({
+    conversations: [],
+    currentConversation: null,
+    messages: [],
+    users: [],
+    onlineUsers: [],
+    typingUsers: {},
+    loading: false,
+    error: null
+  }),
+
+  getters: {
+    sortedConversations: (state) => {
+      return [...state.conversations].sort((a, b) => {
+        const aTime = a.lastMessage?.createdAt || a.updatedAt;
+        const bTime = b.lastMessage?.createdAt || b.updatedAt;
+        return new Date(bTime) - new Date(aTime);
+      });
+    },
+
+    unreadCount: (state) => {
+      return state.conversations.reduce((total, conv) => total + (conv.unreadCount || 0), 0);
+    }
+  },
+
+  actions: {
+    async fetchConversations() {
+      try {
+        this.loading = true;
+        const response = await conversationAPI.getConversations();
+        this.conversations = response.data;
+      } catch (error) {
+        this.error = error.message;
+        console.error('Fetch conversations error:', error);
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async fetchMessages(conversationId) {
+      try {
+        this.loading = true;
+        const response = await messageAPI.getMessages(conversationId);
+        this.messages = response.data;
+      } catch (error) {
+        this.error = error.message;
+        console.error('Fetch messages error:', error);
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async fetchUsers() {
+      try {
+        const response = await userAPI.getAllUsers();
+        this.users = response.data;
+      } catch (error) {
+        this.error = error.message;
+        console.error('Fetch users error:', error);
+      }
+    },
+
+    async selectConversation(conversation) {
+      this.currentConversation = conversation;
+      await this.fetchMessages(conversation._id);
+      socketService.joinConversation(conversation._id);
+      socketService.markAsRead(conversation._id);
+
+      const conv = this.conversations.find(c => c._id === conversation._id);
+      if (conv) {
+        conv.unreadCount = 0;
+      }
+    },
+
+    async createOrGetConversation(userId) {
+      try {
+        const response = await conversationAPI.getOrCreateConversation(userId);
+        const conversation = response.data;
+
+        const existingIndex = this.conversations.findIndex(c => c._id === conversation._id);
+        if (existingIndex === -1) {
+          this.conversations.push(conversation);
+        }
+
+        await this.selectConversation(conversation);
+        return conversation;
+      } catch (error) {
+        this.error = error.message;
+        console.error('Create conversation error:', error);
+      }
+    },
+
+    addMessage(message) {
+      if (this.currentConversation?._id === message.conversation) {
+        this.messages.push(message);
+      }
+
+      const conv = this.conversations.find(c => c._id === message.conversation);
+      if (conv) {
+        conv.lastMessage = message;
+        conv.updatedAt = message.createdAt;
+      }
+    },
+
+    updateOnlineUsers(users) {
+      this.onlineUsers = users;
+      this.users.forEach(user => {
+        user.isOnline = users.includes(user._id);
+      });
+    },
+
+    updateUserStatus(userId, isOnline) {
+      const user = this.users.find(u => u._id === userId);
+      if (user) {
+        user.isOnline = isOnline;
+      }
+
+      if (isOnline && !this.onlineUsers.includes(userId)) {
+        this.onlineUsers.push(userId);
+      } else if (!isOnline) {
+        this.onlineUsers = this.onlineUsers.filter(id => id !== userId);
+      }
+    },
+
+    incrementUnreadCount(conversationId) {
+      const conv = this.conversations.find(c => c._id === conversationId);
+      if (conv && this.currentConversation?._id !== conversationId) {
+        conv.unreadCount = (conv.unreadCount || 0) + 1;
+      }
+    },
+
+    setTyping(userId, username, conversationId, isTyping) {
+      if (this.currentConversation?._id === conversationId) {
+        if (isTyping) {
+          this.typingUsers[userId] = username;
+        } else {
+          delete this.typingUsers[userId];
+        }
+      }
+    }
+  }
+});
