@@ -1,88 +1,99 @@
-import { io } from 'socket.io-client';
+import {io} from 'socket.io-client';
 
-class SocketService {
-  constructor() {
-    this.socket = null;
-    this.connected = false;
-  }
-
-  connect(token) {
-    if (this.socket?.connected) {
-      return this.socket;
+class SocketService
+{
+    constructor() {
+        this.socket = null;
+        this.connected = false;
     }
 
-    const socketUrl = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
+    connect(token) {
+        if (this.socket?.connected) {
+            return this.socket;
+        }
 
-    this.socket = io(socketUrl, {
-      auth: { token },
-      reconnection: true,
-      reconnectionDelay: 1000,
-      reconnectionAttempts: 5
-    });
+        const socketUrl = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5001';
 
-    this.socket.on('connect', () => {
-      console.log('Socket connected');
-      this.connected = true;
-    });
+        this.socket = io(socketUrl, {
+            auth: {token},
+            reconnection: true,
+            reconnectionDelay: 1000,
+            reconnectionAttempts: 5
+        });
 
-    this.socket.on('disconnect', () => {
-      console.log('Socket disconnected');
-      this.connected = false;
-    });
+        this.socket.on('connect', () => {
+            console.log('Socket connected');
+            this.connected = true;
+        });
 
-    this.socket.on('connect_error', (error) => {
-      console.error('Socket connection error:', error);
-      this.connected = false;
-    });
+        this.socket.on('disconnect', () => {
+            console.log('Socket disconnected');
+            this.connected = false;
+        });
 
-    return this.socket;
-  }
+        this.socket.on('connect_error', (error) => {
+            console.error('Socket connection error:', error);
+            this.connected = false;
+        });
 
-  disconnect() {
-    if (this.socket) {
-      this.socket.disconnect();
-      this.socket = null;
-      this.connected = false;
+        return this.socket;
     }
-  }
 
-  emit(event, data) {
-    if (this.socket && this.connected) {
-      this.socket.emit(event, data);
+    disconnect() {
+        if (this.socket) {
+            this.socket.disconnect();
+            this.socket = null;
+            this.connected = false;
+        }
     }
-  }
 
-  on(event, callback) {
-    if (this.socket) {
-      this.socket.on(event, callback);
+    emit(event, data) {
+        if (this.socket && this.connected) {
+            this.socket.emit(event, data);
+        }
     }
-  }
 
-  off(event, callback) {
-    if (this.socket) {
-      this.socket.off(event, callback);
+    on(event, callback) {
+        if (this.socket) {
+            this.socket.on(event, callback);
+        }
     }
-  }
 
-  joinConversation(conversationId) {
-    this.emit('joinConversation', conversationId);
-  }
+    off(event, callback) {
+        if (this.socket) {
+            this.socket.off(event, callback);
+        }
+    }
 
-  leaveConversation(conversationId) {
-    this.emit('leaveConversation', conversationId);
-  }
+    joinConversation(conversationId) {
+        this.emit('joinConversation', conversationId);
+    }
 
-  sendMessage(conversationId, content) {
-    this.emit('sendMessage', { conversationId, content });
-  }
+    leaveConversation(conversationId) {
+        this.emit('leaveConversation', conversationId);
+    }
 
-  markAsRead(conversationId) {
-    this.emit('markAsRead', { conversationId });
-  }
+    sendMessage(conversationId, content) {
+        this.emit('sendMessage',
+            {
+                conversationId,
+                content
+            }
+        );
+    }
 
-  sendTyping(conversationId, isTyping) {
-    this.emit('typing', { conversationId, isTyping });
-  }
+    markAsRead(conversationId) {
+        this.emit('markAsRead', {conversationId});
+    }
+
+    sendTyping(conversationId, isTyping) {
+        this.emit('typing',
+            {
+                conversationId,
+                isTyping
+            }
+        );
+    }
 }
 
 export default new SocketService();

@@ -6,6 +6,12 @@
       <v-btn icon variant="text" @click="openSessions">
         <v-icon>mdi-history</v-icon>
       </v-btn>
+      <v-btn icon @click="goProfile" title="Mon profil">
+        <v-avatar size="36">
+          <img v-if="authStore.user?.avatar" :src="authStore.user.avatar" alt="avatar" />
+          <span v-else style="font-weight:bold;color:white">{{ authStore.user?.username?.[0] || '?' }}</span>
+        </v-avatar>
+      </v-btn>
       <v-chip class="mr-2" color="green-lighten-1">
         {{ authStore.user?.username }}
       </v-chip>
@@ -139,6 +145,10 @@ const openSessions = () => {
 const handleLogout = async () => {
   await authStore.backendLogout();
   router.push('/login');
+};
+
+const goProfile = () => {
+  router.push('/profile');
 };
 </script>
 
