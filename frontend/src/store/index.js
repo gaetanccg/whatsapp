@@ -12,6 +12,11 @@ export const useAuthStore = defineStore('auth', {
   }),
 
   actions: {
+    patchUser(data) {
+      if (!this.user) return;
+      this.user = { ...this.user, ...data };
+      localStorage.setItem('user', JSON.stringify(this.user));
+    },
     async register(userData) {
       const response = await authAPI.register(userData);
       this.setAuth(response.data);
@@ -207,16 +212,27 @@ export const useChatStore = defineStore('chat', {
       });
     },
 
-    updateUserStatus(userId, isOnline) {
+    updateUserStatus(userId, isOnline, lastSeen = null) {
       const user = this.users.find(u => u._id === userId);
       if (user) {
         user.isOnline = isOnline;
+        if (lastSeen) user.lastSeen = lastSeen;
       }
 
       if (isOnline && !this.onlineUsers.includes(userId)) {
         this.onlineUsers.push(userId);
       } else if (!isOnline) {
         this.onlineUsers = this.onlineUsers.filter(id => id !== userId);
+      }
+
+      // If the status change concerns the currently authenticated user, update auth store
+      try {
+        const authStore = useAuthStore();
+        if (authStore.user && authStore.user._id === userId) {
+          authStore.patchUser({ isOnline, lastSeen });
+        }
+      } catch (e) {
+        // in some contexts useAuthStore may not be available; ignore
       }
     },
 

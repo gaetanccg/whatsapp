@@ -32,6 +32,14 @@ const userSchema = new mongoose.Schema({
   socketId: {
     type: String,
     default: null
+  },
+  avatar: {
+    type: String,
+    default: null
+  },
+  status: {
+    type: String,
+    default: 'Hey there! I am using WhatsApp Clone.'
   }
 }, {
   timestamps: true

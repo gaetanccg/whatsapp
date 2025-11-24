@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000/api',
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5001/api',
   headers: {
     'Content-Type': 'application/json'
   }
@@ -42,7 +42,17 @@ export const authAPI = {
 export const userAPI = {
   getAllUsers: () => api.get('/users'),
   getUserById: (id) => api.get(`/users/${id}`),
-  searchUsers: (query) => api.get(`/users/search?query=${query}`)
+  searchUsers: (query) => api.get(`/users/search?query=${query}`),
+  // Profile endpoints
+  getProfile: () => api.get('/users/profile'),
+  updateProfile: (data) => api.put('/users/profile', data),
+  deleteProfile: () => api.delete('/users/profile')
+};
+
+// Proxy helper to forward requests to allowed external hosts via the backend
+export const proxyAPI = {
+  forward: ({ url, method = 'GET', headers = {}, body = null }) =>
+    api.post('/proxy/forward', { url, method, headers, body })
 };
 
 export const conversationAPI = {
