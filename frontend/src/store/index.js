@@ -1,24 +1,28 @@
 import { defineStore } from 'pinia';
-import { authAPI, conversationAPI, messageAPI, userAPI } from '../services/api.js';
+import { authAPI, conversationAPI, messageAPI, userAPI, sessionsAPI } from '../services/api.js';
 import socketService from '../services/socket.js';
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
     user: JSON.parse(localStorage.getItem('user')) || null,
     token: localStorage.getItem('token') || null,
-    isAuthenticated: !!localStorage.getItem('token')
+    isAuthenticated: !!localStorage.getItem('token'),
+    sessions: [],
+    history: { items: [], page: 1, limit: 20, total: 0 }
   }),
 
   actions: {
     async register(userData) {
       const response = await authAPI.register(userData);
       this.setAuth(response.data);
+      await this.postAuthLoad();
       return response.data;
     },
 
     async login(credentials) {
       const response = await authAPI.login(credentials);
       this.setAuth(response.data);
+      await this.postAuthLoad();
       return response.data;
     },
 
@@ -44,6 +48,49 @@ export const useAuthStore = defineStore('auth', {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       socketService.disconnect();
+    },
+
+    async backendLogout() {
+      try {
+        await authAPI.logout();
+      } catch (err) {
+        console.error('Backend logout error:', err.response?.data || err.message);
+      }
+      this.logout();
+    },
+
+    async fetchSessions() {
+      try {
+        const res = await sessionsAPI.list();
+        this.sessions = res.data;
+      } catch (err) {
+        console.error('Fetch sessions error:', err.response?.data || err.message);
+      }
+    },
+
+    async revokeSession(id) {
+      try {
+        await sessionsAPI.revoke(id);
+        this.sessions = this.sessions.filter(s => s._id !== id);
+      } catch (err) {
+        console.error('Revoke session error:', err.response?.data || err.message);
+      }
+    },
+
+    async fetchHistory(page = 1, limit = 20) {
+      try {
+        const res = await sessionsAPI.history(page, limit);
+        this.history = res.data;
+      } catch (err) {
+        console.error('Fetch history error:', err.response?.data || err.message);
+      }
+    },
+
+    async postAuthLoad() {
+      await Promise.all([
+        this.fetchSessions(),
+        this.fetchHistory(1, this.history.limit)
+      ]);
     }
   }
 });

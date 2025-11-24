@@ -35,7 +35,8 @@ api.interceptors.response.use(
 export const authAPI = {
   register: (userData) => api.post('/auth/register', userData),
   login: (credentials) => api.post('/auth/login', credentials),
-  getMe: () => api.get('/auth/me')
+  getMe: () => api.get('/auth/me'),
+  logout: () => api.post('/auth/logout')
 };
 
 export const userAPI = {
@@ -56,6 +57,12 @@ export const messageAPI = {
     api.get(`/messages/${conversationId}?limit=${limit}&skip=${skip}`),
   sendMessage: (conversationId, content) =>
     api.post('/messages', { conversationId, content })
+};
+
+export const sessionsAPI = {
+  list: () => api.get('/sessions'),
+  revoke: (id) => api.delete(`/sessions/${id}`),
+  history: (page = 1, limit = 20) => api.get(`/sessions/history?page=${page}&limit=${limit}`)
 };
 
 export default api;

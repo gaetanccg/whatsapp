@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
+import Session from '../models/Session.js';
 
 export const protect = async (req, res, next) => {
   let token;
@@ -15,6 +16,21 @@ export const protect = async (req, res, next) => {
         return res.status(401).json({ message: 'User not found' });
       }
 
+      // Validate session via jti
+      if (!decoded.jti) {
+        return res.status(401).json({ message: 'Invalid token (missing jti)' });
+      }
+      const session = await Session.findOne({ jti: decoded.jti, user: req.user._id, revoked: false, endedAt: null });
+      if (!session) {
+        return res.status(401).json({ message: 'Session not found or revoked' });
+      }
+      // Update lastActivity (throttle optional: only if >60s gap)
+      const now = Date.now();
+      if (!session.lastActivity || now - session.lastActivity.getTime() > 60000) {
+        session.lastActivity = new Date(now);
+        await session.save();
+      }
+      req.session = session;
       next();
     } catch (error) {
       console.error('Auth middleware error:', error);
