@@ -1,6 +1,6 @@
 <template>
     <v-card flat class="message-list d-flex flex-column" height="100%">
-        <v-card-title v-if="chatStore.currentConversation" class="bg-grey-lighten-3 d-flex align-center">
+        <v-card-title v-if="chatStore.currentConversation" class="header-compact d-flex align-center">
             <v-avatar
                 :color="otherParticipant?.isOnline ? 'green-lighten-1' : 'grey'"
                 size="40"
@@ -10,15 +10,18 @@
             >
                 <span class="text-white">{{ conversationInitial }}</span>
             </v-avatar>
-            <div>
-                <div class="text-subtitle-1">{{ conversationName }}</div>
-                <div v-if="otherParticipant">
-                    <div class="text-caption text-grey">
-                        <span v-if="isUserOnline(null)">En ligne</span>
-                        <span v-else>Hors ligne — Dernière vue: {{ formatLastSeen(getLastSeenForConversation(null)) }}</span>
-                    </div>
+            <div class="header-info">
+                <div class="conversation-title">{{ conversationName }}</div>
+                <div class="text-caption text-grey" v-if="otherParticipant">
+                    <span v-if="isUserOnline(null)">En ligne</span>
+                    <span v-else>Dernière vue: {{ formatLastSeen(getLastSeenForConversation(null)) }}</span>
                 </div>
-                <div v-if="typingText" class="text-caption text-grey">{{ typingText }}</div>
+            </div>
+            <v-spacer></v-spacer>
+            <div class="header-actions">
+                <v-btn icon small title="Profile" @click.stop="openProfile(otherParticipant)">
+                    <v-icon>mdi-account-circle</v-icon>
+                </v-btn>
             </div>
         </v-card-title>
 
@@ -28,7 +31,7 @@
         >
             <div class="text-center text-grey">
                 <v-icon size="64" color="grey-lighten-1">mdi-message-text-outline</v-icon>
-                <p class="text-h6 mt-4">Select a conversation to start chatting</p>
+                <p class="text-h6 mt-4">Sélectionnez une conversation pour commencer</p>
             </div>
         </v-card-text>
 
@@ -188,27 +191,28 @@ watch(() => chatStore.currentConversation, () => {
 
 .messages-container{
     overflow-y: auto;
-    padding: 16px;
-    background-color: #f5f5f5;
+    padding: 12px;
+    background-color: #fafafa;
 }
 
 .message-bubble{
-    margin-bottom: 12px;
-    padding: 8px 12px;
-    border-radius: 8px;
+    margin-bottom: 10px;
+    padding: 10px 14px;
+    border-radius: 10px;
     max-width: 70%;
     word-wrap: break-word;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
 }
 
 .own-message{
     margin-left: auto;
-    background-color: #dcf8c6;
+    background-color: #e6f7ea;
     align-self: flex-end;
 }
 
 .other-message{
     margin-right: auto;
-    background-color: white;
+    background-color: #ffffff;
     align-self: flex-start;
 }
 
@@ -216,18 +220,31 @@ watch(() => chatStore.currentConversation, () => {
     font-size: 12px;
     color: #075e54;
     font-weight: 600;
-    margin-bottom: 4px;
+    margin-bottom: 6px;
 }
 
 .message-content{
     font-size: 14px;
     line-height: 1.4;
-    margin-bottom: 4px;
+    margin-bottom: 6px;
 }
 
 .message-time{
     font-size: 11px;
-    color: #999;
+    color: #9e9e9e;
     text-align: right;
+}
+
+.header-compact{
+    padding: 8px 12px;
+    border-bottom: 1px solid #eee;
+}
+
+.header-info .conversation-title{
+    font-weight: 700;
+}
+
+.header-actions v-btn{
+    margin-left: 6px;
 }
 </style>

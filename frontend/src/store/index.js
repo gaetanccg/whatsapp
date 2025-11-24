@@ -8,7 +8,8 @@ export const useAuthStore = defineStore('auth', {
     token: localStorage.getItem('token') || null,
     isAuthenticated: !!localStorage.getItem('token'),
     sessions: [],
-    history: { items: [], page: 1, limit: 20, total: 0 }
+    history: { items: [], page: 1, limit: 20, total: 0 },
+    contacts: []
   }),
 
   actions: {
@@ -94,8 +95,62 @@ export const useAuthStore = defineStore('auth', {
     async postAuthLoad() {
       await Promise.all([
         this.fetchSessions(),
-        this.fetchHistory(1, this.history.limit)
+        this.fetchHistory(1, this.history.limit),
+        this.loadContacts()
       ]);
+    },
+
+    // Contacts actions
+    async loadContacts() {
+      try {
+        const res = await userAPI.listContacts();
+        this.contacts = res.data;
+      } catch (err) {
+        console.error('Load contacts error:', err.response?.data || err.message);
+      }
+    },
+
+    async addContact(userId) {
+      try {
+        await userAPI.addContact(userId);
+        await this.loadContacts();
+      } catch (err) {
+        console.error('Add contact error:', err.response?.data || err.message);
+        throw err;
+      }
+    },
+
+    async removeContact(userId) {
+      try {
+        await userAPI.removeContact(userId);
+        await this.loadContacts();
+      } catch (err) {
+        console.error('Remove contact error:', err.response?.data || err.message);
+        throw err;
+      }
+    },
+
+    async blockContact(userId) {
+      try {
+        await userAPI.blockContact(userId);
+        await this.loadContacts();
+        // refresh profile
+        await this.fetchUser();
+      } catch (err) {
+        console.error('Block contact error:', err.response?.data || err.message);
+        throw err;
+      }
+    },
+
+    async unblockContact(userId) {
+      try {
+        await userAPI.unblockContact(userId);
+        await this.loadContacts();
+        await this.fetchUser();
+      } catch (err) {
+        console.error('Unblock contact error:', err.response?.data || err.message);
+        throw err;
+      }
     }
   }
 });
@@ -206,9 +261,11 @@ export const useChatStore = defineStore('chat', {
     },
 
     updateOnlineUsers(users) {
-      this.onlineUsers = users;
+      // normalize incoming online user ids to strings to avoid type mismatches
+      const normalized = (users || []).map(u => (u == null ? null : String(u)));
+      this.onlineUsers = normalized;
       this.users.forEach(user => {
-        user.isOnline = users.includes(user._id);
+        user.isOnline = normalized.includes(String(user._id));
       });
     },
 
@@ -219,10 +276,12 @@ export const useChatStore = defineStore('chat', {
         if (lastSeen) user.lastSeen = lastSeen;
       }
 
-      if (isOnline && !this.onlineUsers.includes(userId)) {
-        this.onlineUsers.push(userId);
+      // normalize id for onlineUsers list
+      const sId = userId == null ? null : String(userId);
+      if (isOnline && !this.onlineUsers.includes(sId)) {
+        this.onlineUsers.push(sId);
       } else if (!isOnline) {
-        this.onlineUsers = this.onlineUsers.filter(id => id !== userId);
+        this.onlineUsers = this.onlineUsers.filter(id => id !== sId);
       }
 
       // If the status change concerns the currently authenticated user, update auth store

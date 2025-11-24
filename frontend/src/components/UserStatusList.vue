@@ -1,8 +1,10 @@
 <template>
     <v-card class="user-status-list" flat>
-        <v-card-title class="bg-grey-lighten-2 text-subtitle-1">
-            Utilisateurs ({{ chatStore.users.length }})
-        </v-card-title>
+        <div class="user-list-header d-flex align-center">
+            <div class="title">Utilisateurs</div>
+            <v-spacer></v-spacer>
+            <v-chip small color="green-lighten-1">{{ chatStore.users.length }}</v-chip>
+        </div>
 
         <v-list dense>
             <v-list-item
@@ -15,22 +17,19 @@
                     <v-badge
                         :color="isUserOnline(user) ? 'success' : 'grey'"
                         dot
-                        offset-x="32"
-                        offset-y="28"
+                        offset-x="16"
+                        offset-y="16"
                     >
-                        <v-avatar size="32" :color="isUserOnline(user) ? 'green-lighten-1' : 'grey'">
+                        <v-avatar size="34" :color="isUserOnline(user) ? 'green-lighten-1' : 'grey'">
                             <span class="text-white text-caption">{{ user.username[0].toUpperCase() }}</span>
                         </v-avatar>
                     </v-badge>
                 </template>
 
-                <v-list-item-title class="text-body-2">
-                    <div>{{ user.username }}</div>
-                    <div class="text-caption text-grey">
-                        <span v-if="isUserOnline(user)">En ligne</span>
-                        <span v-else>Hors ligne — Dernière vue: {{ formatLastSeen(getLastSeen(user)) }}</span>
-                    </div>
-                </v-list-item-title>
+                <v-list-item-content>
+                    <v-list-item-title class="user-name">{{ user.username }}</v-list-item-title>
+                    <v-list-item-subtitle class="user-lastseen text-caption text-grey">{{ isUserOnline(user) ? 'En ligne' : ('Dernière vue: ' + formatLastSeen(getLastSeen(user))) }}</v-list-item-subtitle>
+                </v-list-item-content>
             </v-list-item>
 
             <v-list-item v-if="allUsersList.length === 0">
@@ -97,12 +96,33 @@ const formatLastSeen = (iso) => formatDateTimeISO(iso);
     overflow-y: auto;
 }
 
+.user-list-header{
+    display:flex;
+    align-items:center;
+    padding: 8px 12px;
+    border-bottom: 1px solid #eee;
+}
+
+.title{
+    font-weight:700;
+}
+
 .user-item{
     cursor: pointer;
-    transition: background-color 0.2s;
+    transition: background-color 0.12s;
+    padding: 6px 12px;
 }
 
 .user-item:hover{
-    background-color: rgba(0, 0, 0, 0.04);
+    background-color: rgba(0, 0, 0, 0.03);
+}
+
+.user-name{
+    font-size: 0.95rem;
+    font-weight:600;
+}
+
+.user-lastseen{
+    color: #757575;
 }
 </style>

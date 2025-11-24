@@ -40,7 +40,19 @@ const userSchema = new mongoose.Schema({
   status: {
     type: String,
     default: 'Hey there! I am using WhatsApp Clone.'
-  }
+  },
+  contacts: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    }
+  ],
+  blocked: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    }
+  ]
 }, {
   timestamps: true
 });
