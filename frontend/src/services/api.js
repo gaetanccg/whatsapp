@@ -62,10 +62,22 @@ export const proxyAPI = {
 };
 
 export const conversationAPI = {
-  getConversations: () => api.get('/conversations'),
+  getConversations: (params = {}) => {
+    const searchParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        searchParams.append(key, value);
+      }
+    });
+    const queryString = searchParams.toString();
+    return api.get(`/conversations${queryString ? `?${queryString}` : ''}`);
+  },
   getOrCreateConversation: (participantId) => api.post('/conversations', { participantId }),
   createGroupConversation: (participantIds, groupName) =>
-    api.post('/conversations/group', { participantIds, groupName })
+    api.post('/conversations/group', { participantIds, groupName }),
+  archiveConversation: (id) => api.patch(`/conversations/${id}/archive`),
+  unarchiveConversation: (id) => api.patch(`/conversations/${id}/unarchive`),
+  deleteConversation: (id) => api.delete(`/conversations/${id}`)
 };
 
 export const messageAPI = {

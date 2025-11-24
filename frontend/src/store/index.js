@@ -164,12 +164,46 @@ export const useChatStore = defineStore('chat', {
     onlineUsers: [],
     typingUsers: {},
     loading: false,
-    error: null
+    error: null,
+    // Added state for search / filter / sort
+    searchTerm: '',
+    filter: '',
+    sortField: 'updatedAt',
+    sortOrder: 'desc'
   }),
 
   getters: {
     sortedConversations: (state) => {
-      return [...state.conversations].sort((a, b) => {
+      // backend already sorts, but local fallback if needed
+      let base = [...state.conversations];
+      // filter out archived if filter set to unarchived
+      if (state.filter === 'unarchived') {
+        base = base.filter(c => !c.archived);
+      } else if (state.filter === 'archived') {
+        base = base.filter(c => c.archived);
+      }
+      if (state.filter === 'group') {
+        base = base.filter(c => c.isGroup);
+      } else if (state.filter === 'direct') {
+        base = base.filter(c => !c.isGroup);
+      }
+      if (state.filter === 'unread') {
+        base = base.filter(c => (c.unreadCount || 0) > 0);
+      }
+
+      if (state.searchTerm) {
+        const lower = state.searchTerm.toLowerCase();
+        base = base.filter(conv => {
+          if (conv.isGroup && conv.groupName) return conv.groupName.toLowerCase().includes(lower);
+          if (!conv.isGroup) {
+            const other = conv.participants.find(p => p._id !== state.currentUserId);
+            return other && other.username.toLowerCase().includes(lower);
+          }
+          return false;
+        });
+      }
+
+      return base.sort((a, b) => {
         const aTime = a.lastMessage?.createdAt || a.updatedAt;
         const bTime = b.lastMessage?.createdAt || b.updatedAt;
         return new Date(bTime) - new Date(aTime);
@@ -182,10 +216,28 @@ export const useChatStore = defineStore('chat', {
   },
 
   actions: {
+    setSearchTerm(term) {
+      this.searchTerm = term;
+      this.fetchConversations();
+    },
+    setFilter(f) {
+      this.filter = f;
+      this.fetchConversations();
+    },
+    setSort(field, order) {
+      this.sortField = field;
+      this.sortOrder = order || 'desc';
+      this.fetchConversations();
+    },
     async fetchConversations() {
       try {
         this.loading = true;
-        const response = await conversationAPI.getConversations();
+        const response = await conversationAPI.getConversations({
+          search: this.searchTerm || undefined,
+          filter: this.filter || undefined,
+          sort: this.sortField || undefined,
+          order: this.sortOrder || undefined
+        });
         this.conversations = response.data;
       } catch (error) {
         this.error = error.message;
@@ -309,6 +361,39 @@ export const useChatStore = defineStore('chat', {
         } else {
           delete this.typingUsers[userId];
         }
+      }
+    },
+
+    async archiveConversation(id) {
+      try {
+        await conversationAPI.archiveConversation(id);
+        const conv = this.conversations.find(c => c._id === id);
+        if (conv) conv.archived = true;
+      } catch (err) {
+        console.error('Archive conversation error', err);
+      }
+    },
+
+    async unarchiveConversation(id) {
+      try {
+        await conversationAPI.unarchiveConversation(id);
+        const conv = this.conversations.find(c => c._id === id);
+        if (conv) conv.archived = false;
+      } catch (err) {
+        console.error('Unarchive conversation error', err);
+      }
+    },
+
+    async deleteConversation(id) {
+      try {
+        await conversationAPI.deleteConversation(id);
+        this.conversations = this.conversations.filter(c => c._id !== id);
+        if (this.currentConversation?._id === id) {
+          this.currentConversation = null;
+          this.messages = [];
+        }
+      } catch (err) {
+        console.error('Delete conversation error', err);
       }
     }
   }

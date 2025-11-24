@@ -11,6 +11,38 @@
             </v-btn>
         </div>
 
+        <v-card-text class="py-2">
+            <v-text-field
+                v-model="chatStore.searchTerm"
+                @update:model-value="onSearch"
+                label="Rechercher"
+                density="compact"
+                variant="outlined"
+                hide-details="auto"
+                prepend-inner-icon="mdi-magnify"
+            />
+            <div class="d-flex flex-wrap gap-2 mt-2">
+                <v-select
+                    :items="sortOptions"
+                    v-model="localSort"
+                    label="Tri"
+                    density="compact"
+                    hide-details="auto"
+                    style="max-width:160px"
+                    @update:model-value="applySort"
+                />
+                <v-select
+                    :items="filterOptions"
+                    v-model="chatStore.filter"
+                    label="Filtre"
+                    density="compact"
+                    hide-details="auto"
+                    style="max-width:160px"
+                    @update:model-value="applyFilter"
+                />
+            </div>
+        </v-card-text>
+
         <v-list lines="two">
             <v-list-item
                 v-for="conversation in chatStore.sortedConversations"
@@ -30,7 +62,23 @@
                 <v-list-item-content>
                     <div class="conversation-row">
                         <div class="conversation-main">
-                            <div class="conversation-name">{{ getConversationName(conversation) }}</div>
+                            <div class="conversation-name d-flex align-center">
+                                <span>{{ getConversationName(conversation) }}</span>
+                                <v-icon
+                                  v-if="chatStore.currentConversation?._id === conversation._id"
+                                  size="16"
+                                  color="green-darken-2"
+                                  class="ml-1 current-indicator"
+                                  title="Conversation ouverte"
+                                >mdi-eye</v-icon>
+                                <v-icon
+                                  v-else-if="conversation.archived"
+                                  size="14"
+                                  color="grey"
+                                  class="ml-1 archived-indicator"
+                                  title="Archivée"
+                                >mdi-archive-outline</v-icon>
+                            </div>
                             <div class="conversation-snippet">{{ conversation.lastMessage?.content || 'Aucun message' }}</div>
                         </div>
 
@@ -47,6 +95,28 @@
                     </div>
                 </v-list-item-content>
 
+                <template v-slot:append>
+                    <v-menu>
+                        <template #activator="{ props }">
+                            <v-btn icon v-bind="props" size="small" variant="text">
+                                <v-icon>mdi-dots-vertical</v-icon>
+                            </v-btn>
+                        </template>
+                        <v-list density="compact">
+                            <v-list-item @click.stop="toggleArchive(conversation)">
+                                <v-list-item-title>{{ conversation.archived ? 'Désarchiver' : 'Archiver' }}</v-list-item-title>
+                            </v-list-item>
+                            <v-list-item @click.stop="deleteConv(conversation)">
+                                <v-list-item-title class="text-error">Supprimer</v-list-item-title>
+                            </v-list-item>
+                        </v-list>
+                    </v-menu>
+                    <v-list-item-action>
+                        <span class="text-caption text-grey">
+                          {{ formatTime(conversation.lastMessage?.createdAt || conversation.createdAt) }}
+                        </span>
+                    </v-list-item-action>
+                </template>
             </v-list-item>
 
             <v-list-item v-if="chatStore.conversations.length === 0">
@@ -100,11 +170,11 @@
 </template>
 
 <script setup>
-import {ref, onMounted} from 'vue';
-import {useChatStore} from '../store/index.js';
-import {useAuthStore} from '../store/index.js';
+import {onMounted, ref} from 'vue';
+import {useAuthStore, useChatStore} from '../store/index.js';
 import {formatDateTimeISO} from '../utils/date.js';
 import UserProfileModal from './UserProfileModal.vue';
+import socketService from '../services/socket.js';
 
 const chatStore = useChatStore();
 const authStore = useAuthStore();
@@ -112,10 +182,38 @@ const showNewChatDialog = ref(false);
 const showProfile = ref(false);
 const selectedUser = ref(null);
 
+const sortOptions = [
+  { title: 'Dernière activité', value: 'updatedAt' },
+  { title: 'Nom', value: 'groupName' }
+];
+const filterOptions = [
+  { title: 'Tous', value: '' },
+  { title: 'Archivées', value: 'archived' },
+  { title: 'Non archivées', value: 'unarchived' },
+  { title: 'Groupes', value: 'group' },
+  { title: 'Direct', value: 'direct' },
+  { title: 'Non lues', value: 'unread' }
+];
+
+const localSort = ref('updatedAt');
+
 onMounted(async() => {
     await chatStore.fetchConversations();
     await chatStore.fetchUsers();
+    socketService.registerConversationEvents(chatStore);
 });
+
+const onSearch = () => {
+  chatStore.setSearchTerm(chatStore.searchTerm);
+};
+
+const applyFilter = () => {
+  chatStore.setFilter(chatStore.filter);
+};
+
+const applySort = () => {
+  chatStore.setSort(localSort.value, 'desc');
+};
 
 const selectConversation = (conversation) => {
     chatStore.selectConversation(conversation);
@@ -124,6 +222,20 @@ const selectConversation = (conversation) => {
 const startConversation = async(userId) => {
     await chatStore.createOrGetConversation(userId);
     showNewChatDialog.value = false;
+};
+
+const toggleArchive = async(conversation) => {
+  if (conversation.archived) {
+    await chatStore.unarchiveConversation(conversation._id);
+  } else {
+    await chatStore.archiveConversation(conversation._id);
+  }
+};
+
+const deleteConv = async(conversation) => {
+  if (confirm('Supprimer la conversation ?')) {
+    await chatStore.deleteConversation(conversation._id);
+  }
 };
 
 const getConversationName = (conversation) => {
@@ -229,8 +341,7 @@ const formatLastSeen = (iso) => formatDateTimeISO(iso);
 const openProfile = (user) => {
     if (!user) return;
     // find full user info from chatStore.users if possible
-    const full = chatStore.users.find(u => u._id === user._id) || user;
-    selectedUser.value = full;
+    selectedUser.value = chatStore.users.find(u => u._id === user._id) || user;
     showProfile.value = true;
 };
 
@@ -321,4 +432,7 @@ const isUserOnlineForUser = (user) => {
     background: #f5f5f5;
     font-weight:700;
 }
+
+.current-indicator{opacity:0.85}
+.archived-indicator{opacity:0.6}
 </style>

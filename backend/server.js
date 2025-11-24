@@ -56,6 +56,7 @@ const corsOptions = {
         'GET',
         'POST',
         'PUT',
+        'PATCH',
         'DELETE',
         'OPTIONS'
     ],
@@ -67,7 +68,8 @@ const io = new Server(httpServer, {
         origin: corsOriginHandler,
         methods: [
             'GET',
-            'POST'
+            'POST',
+            'PATCH'
         ],
         credentials: true
     }
@@ -102,7 +104,7 @@ if (process.env.SENTRY_DSN) {
     app.use(Sentry.Handlers.errorHandler());
 }
 
-app.use((err, req, res, next) => {
+app.use((err, req, res) => {
     console.error(err.stack);
     res.status(500)
        .json({
