@@ -1,177 +1,568 @@
 <template>
-    <v-card flat class="message-list d-flex flex-column" height="100%">
-        <v-card-title v-if="chatStore.currentConversation" class="header-compact d-flex align-center">
+    <v-card flat class="message-list">
+        <!-- En-tête de conversation -->
+        <v-card-title
+            v-if="chatStore.currentConversation"
+            class="conversation-header"
+        >
             <v-avatar
-                :color="otherParticipant?.isOnline ? 'green-lighten-1' : 'grey'"
+                :color="isParticipantOnline ? 'green-lighten-1' : 'grey'"
                 size="40"
-                class="mr-3"
-                style="cursor:pointer"
-                @click.stop="openProfile(otherParticipant)"
+                class="mr-3 cursor-pointer"
+                @click.stop="handleOpenProfile(otherParticipant)"
             >
                 <span class="text-white">{{ conversationInitial }}</span>
             </v-avatar>
+
             <div class="header-info">
                 <div class="conversation-title">{{ conversationName }}</div>
-                <div class="text-caption text-grey" v-if="otherParticipant">
-                    <span v-if="isUserOnline(null)">En ligne</span>
-                    <span v-else>Dernière vue: {{ formatLastSeen(getLastSeenForConversation(null)) }}</span>
+                <div v-if="otherParticipant" class="text-caption text-grey">
+                    <span v-if="isParticipantOnline">En ligne</span>
+                    <span v-else>Dernière vue: {{ participantLastSeen }}</span>
                 </div>
             </div>
+
             <v-spacer></v-spacer>
+
             <div class="header-actions">
-                <v-btn icon small title="Profile" @click.stop="openProfile(otherParticipant)">
+                <v-btn
+                    icon
+                    size="small"
+                    title="Voir le profil"
+                    @click.stop="handleOpenProfile(otherParticipant)"
+                >
                     <v-icon>mdi-account-circle</v-icon>
                 </v-btn>
             </div>
         </v-card-title>
 
+        <!-- État vide -->
         <v-card-text
             v-if="!chatStore.currentConversation"
-            class="d-flex align-center justify-center flex-grow-1"
+            class="empty-state"
         >
             <div class="text-center text-grey">
-                <v-icon size="64" color="grey-lighten-1">mdi-message-text-outline</v-icon>
-                <p class="text-h6 mt-4">Sélectionnez une conversation pour commencer</p>
+                <v-icon size="64" color="grey-lighten-1">
+                    mdi-message-text-outline
+                </v-icon>
+                <p class="text-h6 mt-4">
+                    Sélectionnez une conversation pour commencer
+                </p>
             </div>
         </v-card-text>
 
+        <!-- Liste des messages -->
         <v-card-text
             v-else
             ref="messageContainer"
-            class="messages-container flex-grow-1"
+            class="messages-container"
         >
+            <!-- Chargement -->
             <div v-if="chatStore.loading" class="text-center py-4">
-                <v-progress-circular indeterminate color="green"></v-progress-circular>
+                <v-progress-circular
+                    indeterminate
+                    color="green"
+                ></v-progress-circular>
             </div>
 
-            <div v-else>
+            <!-- Messages -->
+            <div v-else class="messages-list">
                 <div
                     v-for="message in chatStore.messages"
                     :key="message._id"
-                    :class="['message-bubble', isOwnMessage(message) ? 'own-message' : 'other-message']"
+                    class="message-bubble"
+                    :class="{ 'own-message': isOwnMessage(message) }"
+                    @contextmenu.prevent="handleOpenContextMenu($event, message)"
                 >
-                    <div class="message-header" v-if="!isOwnMessage(message)">
-                        <span class="message-sender">{{ message.sender?.username }}</span>
+                    <!-- En-tête du message (expéditeur) -->
+                    <div
+                        v-if="!isOwnMessage(message)"
+                        class="message-header"
+                    >
+                        <span class="message-sender">
+                            {{ message.sender?.username }}
+                        </span>
                     </div>
+
+                    <!-- Contenu du message -->
                     <div class="message-content">
-                        {{ message.content }}
+                        <span v-if="message.deleted" class="text-muted">
+                            Message supprimé
+                        </span>
+                        <span v-else>
+                            {{ message.content }}
+                            <small
+                                v-if="message.edited"
+                                class="text-caption edited-indicator"
+                            >
+                                (modifié)
+                            </small>
+                        </span>
                     </div>
+
+                    <!-- Heure -->
                     <div class="message-time">
                         {{ formatTime(message.createdAt) }}
+                    </div>
+
+                    <!-- Réactions -->
+                    <div
+                        v-if="hasReactions(message)"
+                        class="message-reactions"
+                    >
+                        <div
+                            v-for="(group, idx) in getGroupedReactions(message.reactions)"
+                            :key="idx"
+                            class="reaction-bubble"
+                            :title="`${group.count} réaction(s)`"
+                            :class="{ 'self-reacted': userReactedWith(message, group.emoji) }"
+                            @click.stop="toggleReaction(message, group.emoji)"
+                        >
+                            {{ group.emoji }} {{ group.count }}
+                        </div>
+                        <v-btn
+                            icon
+                            size="small"
+                            title="Réagir avec 👍"
+                            @click.stop="handleReact(message, '👍')"
+                        >
+                            <v-icon size="small">mdi-thumb-up-outline</v-icon>
+                        </v-btn>
                     </div>
                 </div>
             </div>
         </v-card-text>
 
-        <!-- user profile modal for header avatar -->
-        <user-profile-modal v-if="selectedUser" v-model="showProfile" :user="selectedUser" />
+        <!-- Menu contextuel -->
+        <div
+            v-if="contextMenu.visible"
+            class="message-context-menu"
+            :style="contextMenuStyle"
+            @click.stop
+        >
+            <v-list dense>
+                <v-list-item
+                    v-if="canEditMessage"
+                    @click="handleContextEdit"
+                >
+                    <template #prepend>
+                        <v-icon size="small">mdi-pencil</v-icon>
+                    </template>
+                    <v-list-item-title>Modifier</v-list-item-title>
+                </v-list-item>
+
+                <v-list-item
+                    v-if="canDeleteMessage"
+                    @click="handleContextDelete"
+                >
+                    <template #prepend>
+                        <v-icon size="small">mdi-delete</v-icon>
+                    </template>
+                    <v-list-item-title>Supprimer</v-list-item-title>
+                </v-list-item>
+
+                <v-divider v-if="canEditMessage || canDeleteMessage"></v-divider>
+
+                <v-list-item @click="handleContextReact('👍')">
+                    <template #prepend>
+                        <span class="emoji-icon">👍</span>
+                    </template>
+                    <v-list-item-title>Réagir</v-list-item-title>
+                </v-list-item>
+
+                <v-list-item @click="handleContextReact('❤️')">
+                    <template #prepend>
+                        <span class="emoji-icon">❤️</span>
+                    </template>
+                    <v-list-item-title>Aimer</v-list-item-title>
+                </v-list-item>
+
+                <v-list-item @click="handleContextReact('😂')">
+                    <template #prepend>
+                        <span class="emoji-icon">😂</span>
+                    </template>
+                    <v-list-item-title>Rire</v-list-item-title>
+                </v-list-item>
+            </v-list>
+        </div>
+
+        <!-- Modal de profil utilisateur -->
+        <UserProfileModal
+            v-if="selectedUser"
+            v-model="showProfile"
+            :user="selectedUser"
+        />
     </v-card>
 </template>
 
 <script setup>
-import { computed, ref, watch, nextTick } from 'vue';
-import { useChatStore } from '../store/index.js';
-import { useAuthStore } from '../store/index.js';
-import { formatDateTimeISO } from '../utils/date.js';
+import {computed, ref, watch, nextTick, onMounted, onUnmounted} from 'vue';
+import {useChatStore} from '../store/index.js';
+import {useAuthStore} from '../store/index.js';
+import {formatDateTimeISO} from '../utils/date.js';
 import UserProfileModal from './UserProfileModal.vue';
+import {messageAPI} from '../services/api.js';
 
+// Stores
 const chatStore = useChatStore();
 const authStore = useAuthStore();
+
+// Refs
 const messageContainer = ref(null);
 const showProfile = ref(false);
 const selectedUser = ref(null);
+
+// Context menu state
+const contextMenu = ref({
+    visible: false,
+    x: 0,
+    y: 0,
+    message: null
+});
+
+// Constants
+const CONTEXT_MENU_WIDTH = 160;
+const CONTEXT_MENU_HEIGHT = 200;
+const CONTEXT_MENU_PADDING = 8;
+
+// ============================================================================
+// COMPUTED PROPERTIES - Informations sur la conversation
+// ============================================================================
 
 const conversationName = computed(() => {
     if (!chatStore.currentConversation) return '';
 
     if (chatStore.currentConversation.isGroup) {
-        return chatStore.currentConversation.groupName;
+        return chatStore.currentConversation.groupName || 'Groupe sans nom';
     }
 
-    const otherParticipant = chatStore.currentConversation.participants?.find(p => p._id !== authStore.user._id);
-    return otherParticipant?.username || 'Unknown';
+    const other = otherParticipant.value;
+    return other?.username || 'Utilisateur inconnu';
 });
 
 const conversationInitial = computed(() => {
-    return conversationName.value[0]?.toUpperCase() || '?';
+    return conversationName.value[0]?.toUpperCase() ?? '?';
 });
 
 const otherParticipant = computed(() => {
-    if (!chatStore.currentConversation || chatStore.currentConversation.isGroup) return null;
-    return chatStore.currentConversation.participants?.find(p => p._id !== authStore.user._id) || null;
-});
-
-const getOtherId = (conversation) => {
-  if (!conversation || !conversation.participants) return null;
-  const other = conversation.participants.find(p => {
-    if (!p) return false;
-    if (typeof p === 'string') return p !== authStore.user._id;
-    if (p._id) return p._id !== authStore.user._id;
-    return false;
-  });
-  if (!other) return null;
-  return typeof other === 'string' ? other : (other._id || null);
-};
-
-const isUserOnline = (conversation) => {
-  const id = getOtherId(conversation || chatStore.currentConversation);
-  if (!id) return false;
-  return chatStore.onlineUsers.includes(id);
-};
-
-const getLastSeenForConversation = (conversation) => {
-  const id = getOtherId(conversation || chatStore.currentConversation);
-  if (!id) return null;
-  const fromStore = chatStore.users.find(u => u._id === id);
-  if (fromStore && fromStore.lastSeen) return fromStore.lastSeen;
-  const part = (conversation || chatStore.currentConversation).participants.find(p => {
-    if (!p) return false;
-    if (typeof p === 'string') return p === id;
-    return p._id === id;
-  });
-  return part?.lastSeen || null;
-};
-
-const typingText = computed(() => {
-    const typingUsernames = Object.values(chatStore.typingUsers);
-    if (typingUsernames.length === 0) return '';
-
-    if (typingUsernames.length === 1) {
-        return `${typingUsernames[0]} is typing...`;
+    if (!chatStore.currentConversation || chatStore.currentConversation.isGroup) {
+        return null;
     }
 
-    return `${typingUsernames.length} people are typing...`;
+    return chatStore.currentConversation.participants?.find(p => p._id !== authStore.user._id) ?? null;
 });
 
+const otherParticipantId = computed(() => {
+    const conversation = chatStore.currentConversation;
+    if (!conversation?.participants) return null;
+
+    const other = conversation.participants.find(p => {
+        if (!p) return false;
+        if (typeof p === 'string') return p !== authStore.user._id;
+        return p._id && p._id !== authStore.user._id;
+    });
+
+    if (!other) return null;
+    return typeof other === 'string' ? other : (other._id ?? null);
+});
+
+const isParticipantOnline = computed(() => {
+    const id = otherParticipantId.value;
+    return id ? chatStore.onlineUsers.includes(id) : false;
+});
+
+const participantLastSeen = computed(() => {
+    const id = otherParticipantId.value;
+    if (!id) return 'Jamais vu';
+
+    // Chercher dans le store d'abord
+    const fromStore = chatStore.users.find(u => u._id === id);
+    if (fromStore?.lastSeen) {
+        return formatDateTimeISO(fromStore.lastSeen);
+    }
+
+    // Fallback sur l'objet participant
+    const participant = chatStore.currentConversation?.participants.find(p => {
+        if (typeof p === 'string') return p === id;
+        return p._id === id;
+    });
+
+    return participant?.lastSeen ? formatDateTimeISO(participant.lastSeen) : 'Jamais vu';
+});
+
+// ============================================================================
+// COMPUTED PROPERTIES - Menu contextuel
+// ============================================================================
+
+const contextMenuStyle = computed(() => ({
+    top: `${contextMenu.value.y}px`,
+    left: `${contextMenu.value.x}px`
+}));
+
+const canEditMessage = computed(() => {
+    const message = contextMenu.value.message;
+    return message && !message.deleted && message.sender?._id === authStore.user._id;
+});
+
+const canDeleteMessage = computed(() => {
+    const message = contextMenu.value.message;
+    return message && !message.deleted && message.sender?._id === authStore.user._id;
+});
+
+// ============================================================================
+// MÉTHODES - Utilitaires
+// ============================================================================
+
 const isOwnMessage = (message) => {
-    return message.sender?._id === authStore.user._id;
+    return message?.sender?._id === authStore.user._id;
+};
+
+const hasReactions = (message) => {
+    return !message.deleted && message.reactions && message.reactions.length > 0;
+};
+
+// new helper: check if current user reacted with a specific emoji
+const userReactedWith = (message, emoji) => {
+    if (!message || !message.reactions) return false;
+    return (message.reactions || []).some(r => {
+        const e = r.emoji || r;
+        const uid = r.user?._id || r.user;
+        return e === emoji && String(uid) === String(authStore.user._id);
+    });
+};
+
+// toggle reaction (optimistic) when clicking on grouped reaction
+const toggleReaction = async(message, emoji) => {
+    if (!message || message.deleted) return;
+
+    try {
+        // optimistic UI: compute expected server result locally
+        const already = userReactedWith(message, emoji);
+
+        // Prepare a shallow clone to modify locally
+        const cloned = JSON.parse(JSON.stringify(message));
+        cloned.reactions = cloned.reactions || [];
+
+        if (already) {
+            // remove current user's reaction for this emoji
+            const removeIdx = cloned.reactions.findIndex(r => {
+                const e = r.emoji || r;
+                const uid = r.user?._id || r.user;
+                return e === emoji && String(uid) === String(authStore.user._id);
+            });
+            if (removeIdx !== -1) cloned.reactions.splice(removeIdx, 1);
+        } else {
+            // add or replace reaction for user
+            const existingIdx = cloned.reactions.findIndex(r => String(r.user?._id || r.user) === String(authStore.user._id));
+            if (existingIdx !== -1) {
+                // replace emoji
+                cloned.reactions[existingIdx].emoji = emoji;
+            } else {
+                cloned.reactions.push({ user: { _id: authStore.user._id, username: authStore.user.username }, emoji });
+            }
+        }
+
+        // update local store optimistically
+        chatStore.reactMessageInStore(cloned);
+
+        // call backend
+        const response = await messageAPI.reactMessage(message._id, emoji);
+        // reconcile with server response
+        chatStore.reactMessageInStore(response.data);
+    } catch (error) {
+        console.error('Toggle reaction error:', error);
+        // Optionally: refetch message or notify user
+    }
 };
 
 const formatTime = (timestamp) => {
     if (!timestamp) return '';
 
-    const date = new Date(timestamp);
-    return date.toLocaleTimeString('en-US', {
-        hour: '2-digit',
-        minute: '2-digit'
-    });
-};
-
-const formatLastSeen = (iso) => formatDateTimeISO(iso);
-
-const scrollToBottom = async () => {
-    await nextTick();
-    if (messageContainer.value) {
-        messageContainer.value.scrollTop = messageContainer.value.scrollHeight;
+    try {
+        const date = new Date(timestamp);
+        return date.toLocaleTimeString('fr-FR', {
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    } catch (error) {
+        console.error('Erreur de formatage de l\'heure:', error);
+        return '';
     }
 };
 
-const openProfile = (user) => {
-  if (!user) return;
-  const full = chatStore.users.find(u => u._id === user._id) || user;
-  selectedUser.value = full;
-  showProfile.value = true;
+const getGroupedReactions = (reactions) => {
+    const reactionMap = new Map();
+
+    (reactions || []).forEach(reaction => {
+        if (!reaction) return;
+
+        const emoji = reaction.emoji || reaction;
+        const count = reactionMap.get(emoji) || 0;
+        reactionMap.set(emoji, count + 1);
+    });
+
+    return Array.from(reactionMap.entries()).map(([emoji, count]) => ({
+        emoji,
+        count
+    }));
 };
+
+const scrollToBottom = async() => {
+    await nextTick();
+
+    if (!messageContainer.value) return;
+
+    const element = messageContainer.value.$el || messageContainer.value;
+    if (element) {
+        element.scrollTop = element.scrollHeight;
+    }
+};
+
+// ============================================================================
+// MÉTHODES - Gestion du profil utilisateur
+// ============================================================================
+
+const handleOpenProfile = (user) => {
+    if (!user) return;
+
+    // Chercher les informations complètes de l'utilisateur
+    selectedUser.value = chatStore.users.find(u => u._id === user._id) || user;
+    showProfile.value = true;
+};
+
+// ============================================================================
+// MÉTHODES - Gestion des messages
+// ============================================================================
+
+const handleStartEdit = (message) => {
+    if (!message || message.deleted) return;
+
+    chatStore.setEditingMessage({...message});
+};
+
+const handleDeleteMessage = async(message) => {
+    if (!message || message.deleted) return;
+
+    if (!confirm('Êtes-vous sûr de vouloir supprimer ce message ?')) {
+        return;
+    }
+
+    try {
+        const response = await messageAPI.deleteMessage(message._id);
+        chatStore.updateMessageInStore(response.data);
+    } catch (error) {
+        console.error('Erreur lors de la suppression du message:', error);
+        // Afficher une notification d'erreur à l'utilisateur
+    }
+};
+
+const handleReact = async(message, emoji) => {
+    if (!message || !emoji || message.deleted) return;
+
+    try {
+        const response = await messageAPI.reactMessage(message._id, emoji);
+        chatStore.reactMessageInStore(response.data);
+    } catch (error) {
+        console.error('Erreur lors de l\'ajout de la réaction:', error);
+    }
+};
+
+// ============================================================================
+// MÉTHODES - Menu contextuel
+// ============================================================================
+
+const handleOpenContextMenu = (event, message) => {
+    if (!message) return;
+
+    // Calculer la position du menu en restant dans le viewport
+    const x = Math.min(window.innerWidth - CONTEXT_MENU_WIDTH - CONTEXT_MENU_PADDING, event.clientX);
+    const y = Math.min(window.innerHeight - CONTEXT_MENU_HEIGHT - CONTEXT_MENU_PADDING, event.clientY);
+
+    contextMenu.value = {
+        visible: true,
+        x,
+        y,
+        message
+    };
+};
+
+const closeContextMenu = () => {
+    contextMenu.value = {
+        visible: false,
+        x: 0,
+        y: 0,
+        message: null
+    };
+};
+
+const handleContextEdit = () => {
+    if (!contextMenu.value.message) {
+        return closeContextMenu();
+    }
+
+    handleStartEdit(contextMenu.value.message);
+    closeContextMenu();
+};
+
+const handleContextDelete = async() => {
+    if (!contextMenu.value.message) {
+        return closeContextMenu();
+    }
+
+    await handleDeleteMessage(contextMenu.value.message);
+    closeContextMenu();
+};
+
+const handleContextReact = (emoji) => {
+    if (!contextMenu.value.message) {
+        return closeContextMenu();
+    }
+
+    handleReact(contextMenu.value.message, emoji);
+    closeContextMenu();
+};
+
+// ============================================================================
+// EVENT HANDLERS - Événements globaux
+// ============================================================================
+
+const handleGlobalClick = (event) => {
+    if (!contextMenu.value.visible) return;
+
+    // Vérifier si le clic est à l'intérieur du menu
+    const menuElement = document.querySelector('.message-context-menu');
+    if (menuElement?.contains(event.target)) return;
+
+    closeContextMenu();
+};
+
+const handleKeyDown = (event) => {
+    if (event.key === 'Escape') {
+        closeContextMenu();
+    }
+};
+
+// ============================================================================
+// LIFECYCLE HOOKS
+// ============================================================================
+
+onMounted(() => {
+    scrollToBottom();
+
+    // Écouter les événements globaux
+    window.addEventListener('click', handleGlobalClick);
+    window.addEventListener('keydown', handleKeyDown);
+});
+
+onUnmounted(() => {
+    // Nettoyer les écouteurs d'événements
+    window.removeEventListener('click', handleGlobalClick);
+    window.removeEventListener('keydown', handleKeyDown);
+});
+
+// ============================================================================
+// WATCHERS
+// ============================================================================
 
 watch(() => chatStore.messages.length, () => {
     scrollToBottom();
@@ -179,41 +570,90 @@ watch(() => chatStore.messages.length, () => {
 
 watch(() => chatStore.currentConversation, () => {
     scrollToBottom();
+    closeContextMenu();
 });
-
-// end of script setup
 </script>
 
 <style scoped>
 .message-list{
     position: relative;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+}
+
+.conversation-header{
+    padding: 8px 12px;
+    border-bottom: 1px solid #e8e8e8;
+    background-color: #ffffff;
+}
+
+.cursor-pointer{
+    cursor: pointer;
+}
+
+.header-info{
+    flex: 1;
+    min-width: 0;
+}
+
+.conversation-title{
+    font-weight: 700;
+    font-size: 1rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.header-actions{
+    display: flex;
+    gap: 4px;
+}
+
+.empty-state{
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-grow: 1;
+    min-height: 300px;
 }
 
 .messages-container{
-    overflow-y: auto;
+    flex: 1 1 auto;
     padding: 12px;
     background-color: #fafafa;
+    min-height: 0;
+    max-height: calc(100vh - 168px);
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.messages-list{
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
 .message-bubble{
-    margin-bottom: 10px;
     padding: 10px 14px;
     border-radius: 10px;
     max-width: 70%;
     word-wrap: break-word;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
-}
-
-.own-message{
-    margin-left: auto;
-    background-color: #e6f7ea;
-    align-self: flex-end;
-}
-
-.other-message{
-    margin-right: auto;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
     background-color: #ffffff;
     align-self: flex-start;
+    transition: box-shadow 0.2s ease;
+}
+
+.message-bubble:hover{
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+}
+
+.message-bubble.own-message{
+    background-color: #e6f7ea;
+    align-self: flex-end;
+    margin-left: auto;
 }
 
 .message-header{
@@ -223,10 +663,26 @@ watch(() => chatStore.currentConversation, () => {
     margin-bottom: 6px;
 }
 
+.message-sender{
+    cursor: default;
+}
+
 .message-content{
     font-size: 14px;
-    line-height: 1.4;
+    line-height: 1.5;
     margin-bottom: 6px;
+    word-break: break-word;
+}
+
+.edited-indicator{
+    margin-left: 6px;
+    color: #9e9e9e;
+    font-style: italic;
+}
+
+.text-muted{
+    color: #9e9e9e;
+    font-style: italic;
 }
 
 .message-time{
@@ -235,16 +691,65 @@ watch(() => chatStore.currentConversation, () => {
     text-align: right;
 }
 
-.header-compact{
-    padding: 8px 12px;
-    border-bottom: 1px solid #eee;
+.message-reactions{
+    margin-top: 8px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
 }
 
-.header-info .conversation-title{
-    font-weight: 700;
+.reaction-bubble{
+    background: #f0f0f0;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    cursor: default;
+    transition: background-color 0.2s ease;
 }
 
-.header-actions v-btn{
-    margin-left: 6px;
+.reaction-bubble:hover{
+    background: #e0e0e0;
+}
+
+.reaction-bubble.self-reacted{
+    background: #d1e7dd;
+    color: #0f5132;
+    font-weight: 500;
+}
+
+.message-context-menu{
+    position: fixed;
+    z-index: 2500;
+    background: white;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+    padding: 4px;
+    border-radius: 8px;
+    min-width: 160px;
+}
+
+.emoji-icon{
+    font-size: 18px;
+    display: inline-block;
+    margin-right: 4px;
+}
+
+/* Scrollbar personnalisée */
+.messages-container::-webkit-scrollbar{
+    width: 6px;
+}
+
+.messages-container::-webkit-scrollbar-track{
+    background: transparent;
+}
+
+.messages-container::-webkit-scrollbar-thumb{
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 3px;
+}
+
+.messages-container::-webkit-scrollbar-thumb:hover{
+    background: rgba(0, 0, 0, 0.3);
 }
 </style>

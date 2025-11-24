@@ -84,7 +84,13 @@ export const messageAPI = {
   getMessages: (conversationId, limit = 50, skip = 0) =>
     api.get(`/messages/${conversationId}?limit=${limit}&skip=${skip}`),
   sendMessage: (conversationId, content) =>
-    api.post('/messages', { conversationId, content })
+    api.post('/messages', { conversationId, content }),
+  editMessage: (messageId, content) =>
+    api.put('/messages/edit', { messageId, content }),
+  deleteMessage: (messageId) =>
+    api.delete(`/messages/${messageId}`),
+  reactMessage: (messageId, emoji) =>
+    api.post('/messages/react', { messageId, emoji })
 };
 
 export const sessionsAPI = {

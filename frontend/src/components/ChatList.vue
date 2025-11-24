@@ -260,22 +260,16 @@ const formatTime = (timestamp) => {
     const diff = now - date;
 
     if (diff < 86400000) {
-        return date.toLocaleTimeString(
-            'fr-FR',
-            {
-                hour: '2-digit',
-                minute: '2-digit'
-            }
-        );
+        return date.toLocaleTimeString('fr-FR', {
+            hour: '2-digit',
+            minute: '2-digit'
+        });
     }
 
-    return date.toLocaleDateString(
-        'fr-FR',
-        {
-            month: 'short',
-            day: 'numeric'
-        }
-    );
+    return date.toLocaleDateString('fr-FR', {
+        month: 'short',
+        day: 'numeric'
+    });
 };
 
 const getOtherUser = (conversation) => {
@@ -294,20 +288,23 @@ const getOtherUser = (conversation) => {
     if (!otherId) return typeof other === 'object' ? other : null;
 
     // find full user info
-    return chatStore.users.find(u => u._id === otherId) || { _id: otherId, username: otherId };
+    return chatStore.users.find(u => u._id === otherId) || {
+        _id: otherId,
+        username: otherId
+    };
 };
 
 // Return the other participant id (string) or null
 const getOtherId = (conversation) => {
-  if (!conversation || !conversation.participants) return null;
-  const other = conversation.participants.find(p => {
-    if (!p) return false;
-    if (typeof p === 'string') return p !== authStore.user._id;
-    if (p._id) return p._id !== authStore.user._id;
-    return false;
-  });
-  if (!other) return null;
-  return typeof other === 'string' ? other : (other._id || null);
+    if (!conversation || !conversation.participants) return null;
+    const other = conversation.participants.find(p => {
+        if (!p) return false;
+        if (typeof p === 'string') return p !== authStore.user._id;
+        if (p._id) return p._id !== authStore.user._id;
+        return false;
+    });
+    if (!other) return null;
+    return typeof other === 'string' ? other : (other._id || null);
 };
 
 // Normalize id to string
@@ -315,25 +312,25 @@ const normalizeId = (id) => (id == null ? null : String(id));
 
 // Whether the other participant is online based on the centralized onlineUsers list
 const isUserOnline = (conversation) => {
-  const id = getOtherId(conversation);
-  if (!id) return false;
-  const sId = normalizeId(id);
-  return (chatStore.onlineUsers || []).some(o => normalizeId(o) === sId);
+    const id = getOtherId(conversation);
+    if (!id) return false;
+    const sId = normalizeId(id);
+    return (chatStore.onlineUsers || []).some(o => normalizeId(o) === sId);
 };
 
 // Get lastSeen for the other participant: check chatStore.users first, then participant object
 const getLastSeenForConversation = (conversation) => {
-  const id = getOtherId(conversation);
-  if (!id) return null;
-  const fromStore = chatStore.users.find(u => u._id === id);
-  if (fromStore && fromStore.lastSeen) return fromStore.lastSeen;
-  // fallback to participant object if it contains lastSeen
-  const part = conversation.participants.find(p => {
-    if (!p) return false;
-    if (typeof p === 'string') return p === id;
-    return p._id === id;
-  });
-  return part?.lastSeen || null;
+    const id = getOtherId(conversation);
+    if (!id) return null;
+    const fromStore = chatStore.users.find(u => u._id === id);
+    if (fromStore && fromStore.lastSeen) return fromStore.lastSeen;
+    // fallback to participant object if it contains lastSeen
+    const part = conversation.participants.find(p => {
+        if (!p) return false;
+        if (typeof p === 'string') return p === id;
+        return p._id === id;
+    });
+    return part?.lastSeen || null;
 };
 
 const formatLastSeen = (iso) => formatDateTimeISO(iso);
@@ -385,9 +382,9 @@ const isUserOnlineForUser = (user) => {
 }
 
 .conversation-row{
-    display:flex;
-    justify-content:space-between;
-    align-items:flex-start;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
 }
 
 .conversation-main{
@@ -409,10 +406,10 @@ const isUserOnlineForUser = (user) => {
 
 .conversation-meta{
     text-align: right;
-    display:flex;
-    flex-direction:column;
-    align-items:flex-end;
-    gap:4px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
 }
 
 .time{
@@ -421,16 +418,16 @@ const isUserOnlineForUser = (user) => {
 }
 
 .unread-chip{
-    font-weight:700;
+    font-weight: 700;
 }
 
 .conversation-subinfo{
-    margin-top:4px;
+    margin-top: 4px;
 }
 
 .dialog-title{
     background: #f5f5f5;
-    font-weight:700;
+    font-weight: 700;
 }
 
 .current-indicator{opacity:0.85}
