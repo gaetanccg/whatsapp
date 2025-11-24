@@ -1,12 +1,15 @@
 <template>
     <v-card class="chat-list" flat>
-        <v-card-title class="bg-green-darken-1 text-white d-flex align-center">
-            <span>Conversations</span>
+        <div class="chat-list-header d-flex align-center">
+            <div class="header-title d-flex align-center">
+                <v-icon class="mr-2" color="green-darken-1">mdi-forum-outline</v-icon>
+                <span class="title-text">Conversations</span>
+            </div>
             <v-spacer></v-spacer>
-            <v-btn icon @click="showNewChatDialog = true" size="small" variant="text">
+            <v-btn icon @click="showNewChatDialog = true" size="small" class="new-chat-btn">
                 <v-icon>mdi-message-plus</v-icon>
             </v-btn>
-        </v-card-title>
+        </div>
 
         <v-list lines="two">
             <v-list-item
@@ -18,52 +21,45 @@
             >
                 <template v-slot:prepend>
                     <div @click.stop="openProfile(getOtherUser(conversation))" style="cursor:pointer">
-                        <v-avatar :color="isUserOnline(conversation) ? 'green-lighten-1' : 'grey'">
+                        <v-avatar :color="isUserOnline(conversation) ? 'green-lighten-1' : 'grey'" size="36">
                             <span class="text-white">{{ getConversationInitial(conversation) }}</span>
                         </v-avatar>
                     </div>
                 </template>
 
-                <v-list-item-title>
-                    {{ getConversationName(conversation) }}
-                    <v-chip
-                        v-if="conversation.unreadCount > 0"
-                        color="green"
-                        size="x-small"
-                        class="ml-2"
-                    >
-                        {{ conversation.unreadCount }}
-                    </v-chip>
-                </v-list-item-title>
+                <v-list-item-content>
+                    <div class="conversation-row">
+                        <div class="conversation-main">
+                            <div class="conversation-name">{{ getConversationName(conversation) }}</div>
+                            <div class="conversation-snippet">{{ conversation.lastMessage?.content || 'Aucun message' }}</div>
+                        </div>
 
-                <v-list-item-subtitle>
-                    <div>{{ conversation.lastMessage?.content || 'No messages yet' }}</div>
-                    <div class="text-caption text-grey" v-if="!conversation.isGroup">
+                        <div class="conversation-meta">
+                            <div class="time">{{ formatTime(conversation.lastMessage?.createdAt || conversation.createdAt) }}</div>
+                            <v-chip v-if="conversation.unreadCount > 0" color="green" size="x-small" class="unread-chip">
+                                {{ conversation.unreadCount }}
+                            </v-chip>
+                        </div>
+                    </div>
+                    <div class="conversation-subinfo text-caption text-grey" v-if="!conversation.isGroup">
                         <span v-if="isUserOnline(conversation)">En ligne</span>
                         <span v-else>Hors ligne — Dernière vue: {{ formatLastSeen(getLastSeenForConversation(conversation)) }}</span>
                     </div>
-                </v-list-item-subtitle>
+                </v-list-item-content>
 
-                <template v-slot:append>
-                    <v-list-item-action>
-            <span class="text-caption text-grey">
-              {{ formatTime(conversation.lastMessage?.createdAt || conversation.createdAt) }}
-            </span>
-                    </v-list-item-action>
-                </template>
             </v-list-item>
 
             <v-list-item v-if="chatStore.conversations.length === 0">
                 <v-list-item-title class="text-center text-grey">
-                    No conversations yet. Start a new chat!
+                    Aucune conversation pour le moment
                 </v-list-item-title>
             </v-list-item>
         </v-list>
 
         <v-dialog v-model="showNewChatDialog" max-width="500">
             <v-card>
-                <v-card-title class="bg-green-darken-1 text-white">
-                    New Conversation
+                <v-card-title class="dialog-title">
+                    Nouvelle conversation
                 </v-card-title>
                 <v-card-text class="pt-4">
                     <v-list>
@@ -74,12 +70,12 @@
                         >
                             <template v-slot:prepend>
                                 <v-badge
-                                    :color="user.isOnline ? 'success' : 'grey'"
+                                    :color="isUserOnlineForUser(user) ? 'success' : 'grey'"
                                     dot
                                     offset-x="10"
                                     offset-y="10"
                                 >
-                                    <v-avatar color="green-lighten-1">
+                                    <v-avatar :color="isUserOnlineForUser(user) ? 'green-lighten-1' : 'grey'">
                                         <span class="text-white">{{ user.username[0].toUpperCase() }}</span>
                                     </v-avatar>
                                 </v-badge>
@@ -92,7 +88,7 @@
                 <v-card-actions>
                     <v-spacer></v-spacer>
                     <v-btn color="grey" variant="text" @click="showNewChatDialog = false">
-                        Cancel
+                        Annuler
                     </v-btn>
                 </v-card-actions>
             </v-card>
@@ -136,7 +132,7 @@ const getConversationName = (conversation) => {
     }
 
     const otherParticipant = conversation.participants?.find(p => p._id !== authStore.user._id);
-    return otherParticipant?.username || 'Unknown';
+    return otherParticipant?.username || 'Inconnu';
 };
 
 const getConversationInitial = (conversation) => {
@@ -153,7 +149,7 @@ const formatTime = (timestamp) => {
 
     if (diff < 86400000) {
         return date.toLocaleTimeString(
-            'en-US',
+            'fr-FR',
             {
                 hour: '2-digit',
                 minute: '2-digit'
@@ -162,7 +158,7 @@ const formatTime = (timestamp) => {
     }
 
     return date.toLocaleDateString(
-        'en-US',
+        'fr-FR',
         {
             month: 'short',
             day: 'numeric'
@@ -202,11 +198,15 @@ const getOtherId = (conversation) => {
   return typeof other === 'string' ? other : (other._id || null);
 };
 
+// Normalize id to string
+const normalizeId = (id) => (id == null ? null : String(id));
+
 // Whether the other participant is online based on the centralized onlineUsers list
 const isUserOnline = (conversation) => {
   const id = getOtherId(conversation);
   if (!id) return false;
-  return chatStore.onlineUsers.includes(id);
+  const sId = normalizeId(id);
+  return (chatStore.onlineUsers || []).some(o => normalizeId(o) === sId);
 };
 
 // Get lastSeen for the other participant: check chatStore.users first, then participant object
@@ -233,6 +233,13 @@ const openProfile = (user) => {
     selectedUser.value = full;
     showProfile.value = true;
 };
+
+// helper for new-conversation dialog to determine if a user is online
+const isUserOnlineForUser = (user) => {
+    if (!user) return false;
+    const sId = normalizeId(user._id || user);
+    return (chatStore.onlineUsers || []).some(o => normalizeId(o) === sId);
+};
 </script>
 
 <style scoped>
@@ -241,12 +248,77 @@ const openProfile = (user) => {
     overflow-y: auto;
 }
 
+.chat-list-header{
+    padding: 10px 12px;
+    border-bottom: 1px solid #eee;
+    align-items: center;
+}
+
+.header-title .title-text{
+    font-weight: 700;
+    font-size: 0.95rem;
+}
+
+.new-chat-btn{
+    background: transparent;
+}
+
 .conversation-item{
     cursor: pointer;
-    transition: background-color 0.2s;
+    transition: background-color 0.15s;
+    padding: 8px 12px;
 }
 
 .conversation-item:hover{
-    background-color: rgba(0, 0, 0, 0.04);
+    background-color: rgba(0, 0, 0, 0.03);
+}
+
+.conversation-row{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+}
+
+.conversation-main{
+    max-width: 70%;
+}
+
+.conversation-name{
+    font-weight: 600;
+    font-size: 0.95rem;
+}
+
+.conversation-snippet{
+    color: #757575;
+    font-size: 0.8rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.conversation-meta{
+    text-align: right;
+    display:flex;
+    flex-direction:column;
+    align-items:flex-end;
+    gap:4px;
+}
+
+.time{
+    font-size: 0.75rem;
+    color: #9e9e9e;
+}
+
+.unread-chip{
+    font-weight:700;
+}
+
+.conversation-subinfo{
+    margin-top:4px;
+}
+
+.dialog-title{
+    background: #f5f5f5;
+    font-weight:700;
 }
 </style>

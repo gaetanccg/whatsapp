@@ -46,7 +46,13 @@ export const userAPI = {
   // Profile endpoints
   getProfile: () => api.get('/users/profile'),
   updateProfile: (data) => api.put('/users/profile', data),
-  deleteProfile: () => api.delete('/users/profile')
+  deleteProfile: () => api.delete('/users/profile'),
+  // Contacts
+  listContacts: () => api.get('/users/contacts'),
+  addContact: (id) => api.post(`/users/contacts/${id}`),
+  removeContact: (id) => api.delete(`/users/contacts/${id}`),
+  blockContact: (id) => api.post(`/users/contacts/${id}/block`),
+  unblockContact: (id) => api.delete(`/users/contacts/${id}/block`)
 };
 
 // Proxy helper to forward requests to allowed external hosts via the backend
