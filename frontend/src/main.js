@@ -10,6 +10,15 @@ import * as components from 'vuetify/components';
 import * as directives from 'vuetify/directives';
 import '@mdi/font/css/materialdesignicons.css';
 
+// Install fetch proxy in dev to transparently proxy requests to blocked hosts
+if (import.meta.env.DEV) {
+  try {
+    await import('./services/fetchProxy.js');
+  } catch (err) {
+    console.warn('Failed to load fetch proxy:', err);
+  }
+}
+
 const vuetify = createVuetify({
   components,
   directives,
