@@ -3,6 +3,9 @@
     <v-app-bar color="green-darken-1" dark>
       <v-app-bar-title>WhatsApp Clone</v-app-bar-title>
       <v-spacer></v-spacer>
+      <v-btn icon variant="text" @click="openSessions">
+        <v-icon>mdi-history</v-icon>
+      </v-btn>
       <v-chip class="mr-2" color="green-lighten-1">
         {{ authStore.user?.username }}
       </v-chip>
@@ -32,6 +35,22 @@
       </v-container>
     </v-main>
 
+    <v-dialog v-model="showSessions" max-width="800">
+      <v-card>
+        <v-card-title class="d-flex align-center">
+          <v-icon class="mr-2">mdi-shield-account</v-icon> Sessions & Historique
+          <v-spacer></v-spacer>
+          <v-btn icon variant="text" @click="showSessions=false">
+            <v-icon>mdi-close</v-icon>
+          </v-btn>
+        </v-card-title>
+        <v-divider></v-divider>
+        <v-card-text>
+          <SessionManager />
+        </v-card-text>
+      </v-card>
+    </v-dialog>
+
     <v-snackbar
       v-model="showNotification"
       :timeout="3000"
@@ -53,12 +72,14 @@ import ChatList from '../components/ChatList.vue';
 import MessageList from '../components/MessageList.vue';
 import MessageInput from '../components/MessageInput.vue';
 import UserStatusList from '../components/UserStatusList.vue';
+import SessionManager from '../components/SessionManager.vue';
 
 const router = useRouter();
 const authStore = useAuthStore();
 const chatStore = useChatStore();
 const showNotification = ref(false);
 const notificationMessage = ref('');
+const showSessions = ref(false);
 
 onMounted(() => {
   const token = localStorage.getItem('token');
@@ -111,8 +132,12 @@ onUnmounted(() => {
   socketService.disconnect();
 });
 
-const handleLogout = () => {
-  authStore.logout();
+const openSessions = () => {
+  showSessions.value = true;
+};
+
+const handleLogout = async () => {
+  await authStore.backendLogout();
   router.push('/login');
 };
 </script>
