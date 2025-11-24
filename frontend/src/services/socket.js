@@ -39,6 +39,29 @@ class SocketService
         return this.socket;
     }
 
+    registerConversationEvents(chatStore) {
+        if (!this.socket) return;
+        this.on('conversationArchived', ({ conversationId, userId }) => {
+            const conv = chatStore.conversations.find(c => c._id === conversationId);
+            if (conv && userId === chatStore.$state?.authUserId) {
+                conv.archived = true;
+            }
+        });
+        this.on('conversationUnarchived', ({ conversationId, userId }) => {
+            const conv = chatStore.conversations.find(c => c._id === conversationId);
+            if (conv && userId === chatStore.$state?.authUserId) {
+                conv.archived = false;
+            }
+        });
+        this.on('conversationDeleted', ({ conversationId }) => {
+            chatStore.conversations = chatStore.conversations.filter(c => c._id !== conversationId);
+            if (chatStore.currentConversation?._id === conversationId) {
+                chatStore.currentConversation = null;
+                chatStore.messages = [];
+            }
+        });
+    }
+
     disconnect() {
         if (this.socket) {
             this.socket.disconnect();

@@ -162,4 +162,94 @@ describe('Conversation API Tests', function() {
         .expect(401);
     });
   });
+
+  describe('PATCH /api/conversations/:id/archive & unarchive', function() {
+    let conversationId;
+    beforeEach(async function() {
+      const res = await request(app)
+        .post('/api/conversations')
+        .set('Authorization', `Bearer ${user1Token}`)
+        .send({ participantId: user2Id });
+      conversationId = res.body._id;
+    });
+
+    it('should archive a conversation', async function() {
+      const res = await request(app)
+        .patch(`/api/conversations/${conversationId}/archive`)
+        .set('Authorization', `Bearer ${user1Token}`)
+        .expect(200);
+      expect(res.body).to.have.property('archived', true);
+    });
+
+    it('should unarchive a conversation', async function() {
+      await request(app)
+        .patch(`/api/conversations/${conversationId}/archive`)
+        .set('Authorization', `Bearer ${user1Token}`);
+
+      const res = await request(app)
+        .patch(`/api/conversations/${conversationId}/unarchive`)
+        .set('Authorization', `Bearer ${user1Token}`)
+        .expect(200);
+      expect(res.body).to.have.property('archived', false);
+    });
+  });
+
+  describe('DELETE /api/conversations/:id', function() {
+    let conversationId;
+    beforeEach(async function() {
+      const res = await request(app)
+        .post('/api/conversations')
+        .set('Authorization', `Bearer ${user1Token}`)
+        .send({ participantId: user2Id });
+      conversationId = res.body._id;
+    });
+
+    it('should soft delete a conversation', async function() {
+      await request(app)
+        .delete(`/api/conversations/${conversationId}`)
+        .set('Authorization', `Bearer ${user1Token}`)
+        .expect(200);
+
+      // Should not appear in list afterwards
+      const listRes = await request(app)
+        .get('/api/conversations')
+        .set('Authorization', `Bearer ${user1Token}`)
+        .expect(200);
+      expect(listRes.body.find(c => c._id === conversationId)).to.be.undefined;
+    });
+  });
+
+  describe('GET /api/conversations with search & filter', function() {
+    beforeEach(async function() {
+      // create two direct
+      await request(app)
+        .post('/api/conversations')
+        .set('Authorization', `Bearer ${user1Token}`)
+        .send({ participantId: user2Id });
+      // create group
+      const user3Res = await request(app)
+        .post('/api/auth/register')
+        .send({ username: 'guser3', email: 'guser3@example.com', password: 'password123' });
+      await request(app)
+        .post('/api/conversations/group')
+        .set('Authorization', `Bearer ${user1Token}`)
+        .send({ participantIds: [user2Id, user3Res.body._id], groupName: 'AlphaTeam' });
+    });
+
+    it('should filter group conversations', async function() {
+      const res = await request(app)
+        .get('/api/conversations?filter=group')
+        .set('Authorization', `Bearer ${user1Token}`)
+        .expect(200);
+      expect(res.body.every(c => c.isGroup)).to.be.true;
+    });
+
+    it('should search by group name', async function() {
+      const res = await request(app)
+        .get('/api/conversations?search=Alpha')
+        .set('Authorization', `Bearer ${user1Token}`)
+        .expect(200);
+      expect(res.body.some(c => c.groupName === 'AlphaTeam')).to.be.true;
+    });
+  });
 });

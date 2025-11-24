@@ -34,6 +34,9 @@ export const setupSocket = (io) => {
 
         connectedUsers.set(socket.userId, socket.id);
 
+        // Join a personal room for user-targeted events (archivage, suppression, etc.)
+        socket.join(socket.userId);
+
         // set user online and capture updated doc
         const updatedOnline = await User.findByIdAndUpdate(socket.userId, {
             isOnline: true,
