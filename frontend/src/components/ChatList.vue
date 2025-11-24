@@ -72,7 +72,7 @@
                                   title="Conversation ouverte"
                                 >mdi-eye</v-icon>
                                 <v-icon
-                                  v-else-if="conversation.archived"
+                                  v-if="conversation.archived"
                                   size="14"
                                   color="grey"
                                   class="ml-1 archived-indicator"
