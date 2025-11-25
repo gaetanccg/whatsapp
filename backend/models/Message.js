@@ -13,8 +13,8 @@ const messageSchema = new mongoose.Schema({
   },
   content: {
     type: String,
-    required: true,
-    trim: true
+    trim: true,
+    required: false
   },
   readBy: [{
     type: mongoose.Schema.Types.ObjectId,
@@ -22,9 +22,13 @@ const messageSchema = new mongoose.Schema({
   }],
   messageType: {
     type: String,
-    enum: ['text', 'image', 'file'],
+    enum: ['text', 'image', 'video', 'file'],
     default: 'text'
   },
+  media: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Media'
+  }],
   edited: {
     type: Boolean,
     default: false

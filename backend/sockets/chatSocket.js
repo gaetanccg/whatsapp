@@ -77,7 +77,7 @@ export const setupSocket = (io) => {
                     readBy: [socket.userId]
                 });
 
-                await message.populate('sender', '-password');
+                await message.populate('sender', '-password').populate('media');
 
                 conversation.lastMessage = message._id;
                 conversation.participants.forEach(participant => {

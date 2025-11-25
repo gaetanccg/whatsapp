@@ -18,6 +18,7 @@ export const getMessages = async (req, res) => {
 
     const messages = await Message.find({ conversation: conversationId })
       .populate('sender', '-password')
+      .populate('media')
       .sort({ createdAt: -1 })
       .limit(parseInt(limit))
       .skip(parseInt(skip));
@@ -39,9 +40,13 @@ export const getMessages = async (req, res) => {
 
 export const sendMessage = async (req, res) => {
   try {
-    const { conversationId, content } = req.body;
+    const { conversationId, content, mediaIds } = req.body;
 
-    if (!conversationId || !content) {
+    if (!conversationId) {
+      return res.status(400).json({ message: 'Conversation ID and content are required' });
+    }
+
+    if ((!content || !content.trim()) && (!mediaIds || mediaIds.length === 0)) {
       return res.status(400).json({ message: 'Conversation ID and content are required' });
     }
 
@@ -57,11 +62,21 @@ export const sendMessage = async (req, res) => {
     const message = await Message.create({
       conversation: conversationId,
       sender: req.user._id,
-      content,
+      content: content && content.trim() ? content.trim() : '',
       readBy: [req.user._id]
     });
 
-    await message.populate('sender', '-password');
+    if (Array.isArray(mediaIds) && mediaIds.length > 0) {
+      message.media.push(...mediaIds);
+      if (!content || !content.trim()) {
+        message.messageType = 'file';
+      }
+    }
+
+    await message.populate([
+      { path: 'sender', select: '-password' },
+      { path: 'media' }
+    ]);
 
     conversation.lastMessage = message._id;
     conversation.participants.forEach(participantId => {
