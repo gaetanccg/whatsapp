@@ -13,6 +13,8 @@ import sessionRoutes from './routes/sessionRoutes.js';
 import {setupSocket} from './sockets/chatSocket.js';
 import proxyRoutes from './routes/proxyRoutes.js';
 import {setIo} from './sockets/socketEmitter.js';
+import mediaRoutes from './routes/mediaRoutes.js';
+import { isFfmpegAvailable } from './utils/mediaProcessing.js';
 
 dotenv.config();
 
@@ -92,6 +94,7 @@ app.use('/api/conversations', conversationRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/sessions', sessionRoutes);
 app.use('/api/proxy', proxyRoutes);
+app.use('/api/media', mediaRoutes);
 
 app.get('/', (req, res) => {
     res.json({message: 'WhatsApp Clone API'});
@@ -100,7 +103,10 @@ app.get('/', (req, res) => {
 app.get('/health', (req, res) => {
     res.json({
         status: 'OK',
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        media: {
+            ffmpeg: isFfmpegAvailable()
+        }
     });
 });
 

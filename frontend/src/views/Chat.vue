@@ -49,12 +49,20 @@
                         <UserStatusList />
                     </v-col>
 
-                    <v-col cols="12" md="8" lg="9" class="chat-main">
+                    <v-col cols="12" md="8" lg="9" class="chat-main"
+                        :class="{ 'drag-active': dragActive }"
+                        @dragover.prevent="onDragOver"
+                        @dragleave="onDragLeave"
+                        @drop.prevent="onDrop">
                         <div class="d-flex flex-column fill-height">
                             <div class="flex-grow-1 d-flex flex-column" style="overflow: hidden; min-height: 0;">
                                 <MessageList />
                             </div>
                             <MessageInput />
+                        </div>
+                        <div v-if="dragActive" class="drag-overlay">
+                            <v-icon size="64" color="white">mdi-paperclip</v-icon>
+                            <div class="mt-2 text-white font-weight-bold">Déposez vos fichiers ici</div>
                         </div>
                     </v-col>
                 </v-row>
@@ -97,13 +105,17 @@ import MessageInput from '../components/MessageInput.vue';
 import UserStatusList from '../components/UserStatusList.vue';
 import SessionManager from '../components/SessionManager.vue';
 import ContactMenu from '../components/ContactMenu.vue';
+import { usePendingMedia } from '../composables/usePendingMedia.js';
 
 const router = useRouter();
 const authStore = useAuthStore();
 const chatStore = useChatStore();
 const uiStore = useUiStore();
+const { addFiles } = usePendingMedia();
+
 const showSessions = ref(false);
 const showSidebar = ref(true);
+const dragActive = ref(false);
 
 onMounted(() => {
     const token = localStorage.getItem('token');
@@ -194,6 +206,24 @@ const handleLogout = () => {
 const goProfile = () => {
     router.push('/profile');
 };
+
+function onDragOver(e){
+  if (!e.dataTransfer) return;
+  const hasFiles = Array.from(e.dataTransfer.types || []).includes('Files');
+  if (hasFiles){
+    dragActive.value = true;
+  }
+}
+function onDragLeave(){
+  dragActive.value = false;
+}
+function onDrop(e){
+  const list = e.dataTransfer.files;
+  if (list && list.length){
+    addFiles(list);
+  }
+  dragActive.value = false;
+}
 </script>
 
 <style scoped>
@@ -224,6 +254,24 @@ const goProfile = () => {
     /* full viewport height minus app bar */
     height: calc(100vh - 56px);
     min-height: 0;
+    position:relative;
+}
+
+.drag-overlay{
+    position:absolute;
+    inset:0;
+    background:rgba(0,0,0,0.55);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    z-index:50;
+    pointer-events:none;
+}
+
+.chat-main.drag-active{
+    outline:3px dashed #2e7d32;
+    outline-offset:-3px;
 }
 
 /* ensure the inner container keeps flex behavior */
