@@ -1,5 +1,6 @@
 import Message from '../models/Message.js';
 import Conversation from '../models/Conversation.js';
+import User from '../models/User.js';
 import { emitToConversation } from '../sockets/socketEmitter.js';
 
 export const getMessages = async (req, res) => {
@@ -10,10 +11,24 @@ export const getMessages = async (req, res) => {
     const conversation = await Conversation.findOne({
       _id: conversationId,
       participants: req.user._id
-    });
+    }).populate('participants', '-password');
 
     if (!conversation) {
       return res.status(404).json({ message: 'Conversation not found' });
+    }
+
+    // Check if conversation is blocked (for private conversations)
+    if (!conversation.isGroup) {
+      const currentUser = await User.findById(req.user._id);
+      const otherParticipant = conversation.participants.find(p => p._id.toString() !== req.user._id.toString());
+
+      if (otherParticipant && currentUser.blocked.some(id => id.toString() === otherParticipant._id.toString())) {
+        return res.status(403).json({ message: 'Cannot view messages from blocked user' });
+      }
+
+      if (otherParticipant && otherParticipant.blocked.some(id => id.toString() === req.user._id.toString())) {
+        return res.status(403).json({ message: 'This user has blocked you' });
+      }
     }
 
     const messages = await Message.find({ conversation: conversationId })
@@ -53,10 +68,24 @@ export const sendMessage = async (req, res) => {
     const conversation = await Conversation.findOne({
       _id: conversationId,
       participants: req.user._id
-    });
+    }).populate('participants', '-password');
 
     if (!conversation) {
       return res.status(404).json({ message: 'Conversation not found' });
+    }
+
+    // Check blocking for private conversations
+    if (!conversation.isGroup) {
+      const currentUser = await User.findById(req.user._id);
+      const otherParticipant = conversation.participants.find(p => p._id.toString() !== req.user._id.toString());
+
+      if (otherParticipant && currentUser.blocked.some(id => id.toString() === otherParticipant._id.toString())) {
+        return res.status(403).json({ message: 'Cannot send message to blocked user' });
+      }
+
+      if (otherParticipant && otherParticipant.blocked.some(id => id.toString() === req.user._id.toString())) {
+        return res.status(403).json({ message: 'This user has blocked you' });
+      }
     }
 
     const message = await Message.create({

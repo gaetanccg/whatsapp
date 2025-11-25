@@ -70,6 +70,22 @@ export const setupSocket = (io) => {
                     return;
                 }
 
+                // Check if sender is blocked by any participant (for private conversations)
+                if (!conversation.isGroup) {
+                    const sender = await User.findById(socket.userId);
+                    const otherParticipant = conversation.participants.find(p => p._id.toString() !== socket.userId);
+
+                    if (otherParticipant && otherParticipant.blocked.some(id => id.toString() === socket.userId)) {
+                        socket.emit('error', {message: 'Cannot send message to this user'});
+                        return;
+                    }
+
+                    if (sender && sender.blocked.some(id => id.toString() === otherParticipant._id.toString())) {
+                        socket.emit('error', {message: 'Cannot send message to blocked user'});
+                        return;
+                    }
+                }
+
                 const message = await Message.create({
                     conversation: conversationId,
                     sender: socket.userId,
@@ -105,9 +121,22 @@ export const setupSocket = (io) => {
                 await conversation.save();
 
                 let deliveredCount = 0;
-                conversation.participants.forEach(participant => {
+                const sender = await User.findById(socket.userId);
+
+                for (const participant of conversation.participants) {
                     const participantId = participant._id.toString();
                     const socketId = connectedUsers.get(participantId);
+
+                    // Skip if participant has blocked the sender
+                    if (participant.blocked.some(id => id.toString() === socket.userId)) {
+                        continue;
+                    }
+
+                    // Skip if sender has blocked the participant
+                    if (sender && sender.blocked.some(id => id.toString() === participantId)) {
+                        continue;
+                    }
+
                     if (socketId) {
                         io.to(socketId).emit('receiveMessage', message);
 
@@ -124,7 +153,7 @@ export const setupSocket = (io) => {
                             });
                         }
                     }
-                });
+                }
 
                 if (deliveredCount > 0 && message.status === 'sent') {
                     message.status = 'delivered';

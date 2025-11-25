@@ -37,15 +37,24 @@
                 >
                     <v-icon>mdi-account-group</v-icon>
                 </v-btn>
-                <v-btn
-                    v-else
-                    icon
-                    size="small"
-                    title="Voir le profil"
-                    @click.stop="handleOpenProfile(otherParticipant)"
-                >
-                    <v-icon>mdi-account-circle</v-icon>
-                </v-btn>
+                <template v-else>
+                    <v-btn
+                        icon
+                        size="small"
+                        :title="isUserBlocked ? 'Débloquer' : 'Bloquer'"
+                        @click.stop="toggleBlockUser"
+                    >
+                        <v-icon>{{ isUserBlocked ? 'mdi-account-lock-open' : 'mdi-account-cancel' }}</v-icon>
+                    </v-btn>
+                    <v-btn
+                        icon
+                        size="small"
+                        title="Voir le profil"
+                        @click.stop="handleOpenProfile(otherParticipant)"
+                    >
+                        <v-icon>mdi-account-circle</v-icon>
+                    </v-btn>
+                </template>
             </div>
         </v-card-title>
 
@@ -259,6 +268,7 @@
 import {computed, ref, watch, nextTick, onMounted, onUnmounted, reactive, onBeforeUnmount} from 'vue';
 import {useChatStore} from '../store/index.js';
 import {useAuthStore} from '../store/index.js';
+import {useUiStore} from '../store/uiStore.js';
 import {formatDateTimeISO} from '../utils/date.js';
 import UserProfileModal from './UserProfileModal.vue';
 import {messageAPI} from '../services/api.js';
@@ -269,6 +279,7 @@ import mediaAPI from '../services/mediaApi.js';
 // Stores
 const chatStore = useChatStore();
 const authStore = useAuthStore();
+const uiStore = useUiStore();
 
 // Refs
 const messageContainer = ref(null);
@@ -401,6 +412,12 @@ const otherParticipant = computed(() => {
     }
 
     return chatStore.currentConversation.participants?.find(p => p._id !== authStore.user._id) ?? null;
+});
+
+const isUserBlocked = computed(() => {
+    if (!otherParticipant.value) return false;
+    const otherUserId = otherParticipant.value._id;
+    return authStore.user?.blocked?.includes(otherUserId) || false;
 });
 
 const otherParticipantId = computed(() => {
@@ -650,6 +667,34 @@ const handleGroupUpdated = async () => {
     await chatStore.loadConversations();
     if (chatStore.currentConversation?._id) {
         await chatStore.selectConversation(chatStore.currentConversation._id);
+    }
+};
+
+// ============================================================================
+// MÉTHODES - Blocage d'utilisateur
+// ============================================================================
+
+const toggleBlockUser = async () => {
+    if (!otherParticipant.value) return;
+
+    const otherUserId = otherParticipant.value._id;
+    const action = isUserBlocked.value ? 'unblock' : 'block';
+    const confirmMsg = isUserBlocked.value
+        ? `Débloquer ${otherParticipant.value.username} ?`
+        : `Bloquer ${otherParticipant.value.username} ? Vous ne pourrez plus échanger de messages.`;
+
+    if (!confirm(confirmMsg)) return;
+
+    try {
+        await chatStore.toggleBlockUser(otherUserId);
+        await authStore.loadUser();
+        uiStore.showNotification(
+            isUserBlocked.value ? 'Utilisateur débloqué' : 'Utilisateur bloqué',
+            'success'
+        );
+    } catch (error) {
+        console.error('Error toggling block:', error);
+        uiStore.showNotification('Erreur lors du blocage/déblocage', 'error');
     }
 };
 

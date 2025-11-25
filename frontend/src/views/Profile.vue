@@ -141,6 +141,45 @@
                         </v-form>
                     </v-card-text>
                 </v-card>
+
+                <!-- Blocked users section -->
+                <v-card class="mt-6">
+                    <v-card-title>
+                        <div class="d-flex align-center">
+                            <v-icon class="me-2">mdi-account-cancel</v-icon>
+                            Contacts bloqués
+                        </div>
+                    </v-card-title>
+                    <v-card-text>
+                        <v-list v-if="blockedUsers.length > 0">
+                            <v-list-item
+                                v-for="blockedUser in blockedUsers"
+                                :key="blockedUser._id"
+                            >
+                                <template v-slot:prepend>
+                                    <v-avatar color="grey">
+                                        <span class="text-white">{{ blockedUser.username[0].toUpperCase() }}</span>
+                                    </v-avatar>
+                                </template>
+                                <v-list-item-title>{{ blockedUser.username }}</v-list-item-title>
+                                <v-list-item-subtitle>{{ blockedUser.email }}</v-list-item-subtitle>
+                                <template v-slot:append>
+                                    <v-btn
+                                        icon="mdi-account-lock-open"
+                                        size="small"
+                                        color="primary"
+                                        variant="text"
+                                        @click="unblockUser(blockedUser._id)"
+                                    >
+                                    </v-btn>
+                                </template>
+                            </v-list-item>
+                        </v-list>
+                        <div v-else class="text-center text-grey py-4">
+                            Aucun contact bloqué
+                        </div>
+                    </v-card-text>
+                </v-card>
             </v-col>
         </v-row>
 
@@ -313,7 +352,39 @@ export default {
             return formatDateTimeISO(ls);
         });
 
-        onMounted(load);
+        const blockedUsers = ref([]);
+
+        const loadBlockedUsers = async () => {
+            try {
+                const res = await userAPI.getBlockedUsers();
+                blockedUsers.value = res.data;
+            } catch (err) {
+                console.error('Load blocked users error', err);
+            }
+        };
+
+        const unblockUser = async (userId) => {
+            if (!confirm('Débloquer cet utilisateur ?')) return;
+
+            try {
+                await userAPI.toggleBlock(userId);
+                await auth.loadUser();
+                await loadBlockedUsers();
+                snackbar.message = 'Utilisateur débloqué';
+                snackbar.color = 'success';
+                snackbar.show = true;
+            } catch (err) {
+                console.error('Unblock user error', err);
+                snackbar.message = err.response?.data?.message || 'Erreur lors du déblocage';
+                snackbar.color = 'error';
+                snackbar.show = true;
+            }
+        };
+
+        onMounted(async () => {
+            await load();
+            await loadBlockedUsers();
+        });
 
         return {
             form,
@@ -328,7 +399,9 @@ export default {
             user,
             lastSeenFormatted,
             formRef,
-            snackbar
+            snackbar,
+            blockedUsers,
+            unblockUser
         };
     }
 };
