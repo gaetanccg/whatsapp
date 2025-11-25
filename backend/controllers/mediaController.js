@@ -192,3 +192,28 @@ export const streamMedia = async (req, res) => {
     res.status(500).json({ message: 'Erreur serveur', error: err.message });
   }
 };
+
+// Nouvelle fonction : lister les médias d'une conversation
+export const listConversationMedia = async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    const limit = parseInt(req.query.limit || '100');
+    const skip = parseInt(req.query.skip || '0');
+
+    const conversation = await Conversation.findOne({ _id: conversationId, participants: req.user._id });
+    if (!conversation) {
+      return res.status(404).json({ message: 'Conversation not found' });
+    }
+
+    const medias = await Media.find({ conversation: conversationId, deletedAt: null })
+      .populate('user', '-password')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    res.json(medias);
+  } catch (err) {
+    console.error('List conversation media error:', err);
+    res.status(500).json({ message: 'Erreur serveur', error: err.message });
+  }
+};
