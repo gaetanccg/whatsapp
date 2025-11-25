@@ -32,7 +32,7 @@ if (!frontendUrl || frontendUrl.includes('<') || frontendUrl.trim() === '') {
 // Allow all CORS in non-production environments or when explicitly enabled
 const allowAllCors = process.env.NODE_ENV !== 'production' || process.env.ALLOW_ALL_CORS === 'true';
 
-if (process.env.SENTRY_DSN) {
+if (process.env.SENTRY_DSN && process.env.NODE_ENV !== 'test') {
     Sentry.init({
         dsn: process.env.SENTRY_DSN,
         environment: process.env.NODE_ENV || 'development',
@@ -121,7 +121,7 @@ app.get('/health', (req, res) => {
     });
 });
 
-if (process.env.SENTRY_DSN) {
+if (process.env.SENTRY_DSN && process.env.NODE_ENV !== 'test') {
     app.use(Sentry.Handlers.errorHandler({
         shouldHandleError(error) {
             return true;
@@ -132,7 +132,7 @@ if (process.env.SENTRY_DSN) {
 app.use((err, req, res, next) => {
     console.error(err.stack);
 
-    if (process.env.SENTRY_DSN) {
+    if (process.env.SENTRY_DSN && process.env.NODE_ENV !== 'test') {
         Sentry.captureException(err, {
             tags: {
                 endpoint: req.path,
