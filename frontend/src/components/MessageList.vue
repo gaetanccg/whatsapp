@@ -139,9 +139,12 @@
                     </template>
                   </div>
 
-                    <!-- Heure -->
+                    <!-- Heure et statut -->
                     <div class="message-time">
                         {{ formatTime(message.createdAt) }}
+                        <v-icon v-if="isOwnMessage(message) && message.status" size="16" :color="getStatusColor(message.status)" class="ml-1">
+                            {{ getStatusIcon(message.status) }}
+                        </v-icon>
                     </div>
 
                     <!-- Réactions -->
@@ -444,6 +447,26 @@ const isOwnMessage = (message) => {
 
 const hasReactions = (message) => {
     return !message.deleted && message.reactions && message.reactions.length > 0;
+};
+
+const getStatusIcon = (status) => {
+    switch(status) {
+        case 'pending': return 'mdi-clock-outline';
+        case 'sent': return 'mdi-check';
+        case 'delivered': return 'mdi-check-all';
+        case 'read': return 'mdi-check-all';
+        default: return 'mdi-check';
+    }
+};
+
+const getStatusColor = (status) => {
+    switch(status) {
+        case 'pending': return 'grey';
+        case 'sent': return 'grey';
+        case 'delivered': return 'grey';
+        case 'read': return 'blue';
+        default: return 'grey';
+    }
 };
 
 // new helper: check if current user reacted with a specific emoji

@@ -201,6 +201,21 @@ onMounted(() => {
         }
     });
 
+    socketService.on('messageStatusUpdate', (data) => {
+        const message = chatStore.messages.find(m => m._id === data.messageId);
+        if (message) {
+            message.status = data.status;
+            if (data.status === 'delivered' && data.timestamp) {
+                message.statusTimestamps = message.statusTimestamps || {};
+                message.statusTimestamps.delivered = data.timestamp;
+            } else if (data.status === 'read' && data.timestamp) {
+                message.statusTimestamps = message.statusTimestamps || {};
+                message.statusTimestamps.read = data.timestamp;
+            }
+            chatStore.updateMessageInStore(message);
+        }
+    });
+
     socketService.on('error', (error) => {
         uiStore.showNotification(error.message || 'Error', 'error');
     });

@@ -74,6 +74,10 @@ export const setupSocket = (io) => {
                     conversation: conversationId,
                     sender: socket.userId,
                     content,
+                    status: 'sent',
+                    statusTimestamps: {
+                        sent: new Date()
+                    },
                     readBy: [
                         {
                             user: socket.userId,
@@ -82,8 +86,6 @@ export const setupSocket = (io) => {
                     ]
                 });
 
-                // message.populate(...) retourne une Promise et ne supporte pas le chaînage
-                // dans certaines versions : utiliser un seul appel avec un tableau de chemins
                 await message.populate([
                     {
                         path: 'sender',
@@ -102,6 +104,7 @@ export const setupSocket = (io) => {
                 });
                 await conversation.save();
 
+                let deliveredCount = 0;
                 conversation.participants.forEach(participant => {
                     const participantId = participant._id.toString();
                     const socketId = connectedUsers.get(participantId);
@@ -109,6 +112,11 @@ export const setupSocket = (io) => {
                         io.to(socketId).emit('receiveMessage', message);
 
                         if (participantId !== socket.userId) {
+                            deliveredCount++;
+                            message.deliveredTo.push({
+                                user: participantId,
+                                deliveredAt: new Date()
+                            });
                             io.to(socketId).emit('newMessageNotification', {
                                 conversationId,
                                 message,
@@ -117,6 +125,24 @@ export const setupSocket = (io) => {
                         }
                     }
                 });
+
+                if (deliveredCount > 0 && message.status === 'sent') {
+                    message.status = 'delivered';
+                    message.statusTimestamps.delivered = new Date();
+                    await message.save();
+
+                    conversation.participants.forEach(participant => {
+                        const participantId = participant._id.toString();
+                        const socketId = connectedUsers.get(participantId);
+                        if (socketId) {
+                            io.to(socketId).emit('messageStatusUpdate', {
+                                messageId: message._id,
+                                status: 'delivered',
+                                timestamp: message.statusTimestamps.delivered
+                            });
+                        }
+                    });
+                }
             } catch (error) {
                 console.error('Send message error:', error);
                 socket.emit('error', {message: 'Failed to send message'});
@@ -149,20 +175,35 @@ export const setupSocket = (io) => {
             try {
                 const {conversationId} = data;
 
-                await Message.updateMany(
-                    {
-                        conversation: conversationId,
-                        sender: {$ne: socket.userId}
-                    },
-                    {
-                        $addToSet: {
-                            readBy: {
-                                user: socket.userId,
-                                readAt: new Date()
-                            }
-                        }
+                const readAt = new Date();
+                const updatedMessages = await Message.find({
+                    conversation: conversationId,
+                    sender: {$ne: socket.userId},
+                    'readBy.user': {$ne: socket.userId}
+                });
+
+                for (const msg of updatedMessages) {
+                    msg.readBy.push({ user: socket.userId, readAt });
+                    if (msg.status !== 'read') {
+                        msg.status = 'read';
+                        msg.statusTimestamps.read = readAt;
                     }
-                );
+                    await msg.save();
+
+                    const conversation = await Conversation.findById(conversationId).populate('participants');
+                    conversation.participants.forEach(participant => {
+                        const participantId = participant._id.toString();
+                        const socketId = connectedUsers.get(participantId);
+                        if (socketId) {
+                            io.to(socketId).emit('messageStatusUpdate', {
+                                messageId: msg._id,
+                                status: 'read',
+                                timestamp: readAt,
+                                userId: socket.userId
+                            });
+                        }
+                    });
+                }
 
                 const conversation = await Conversation.findById(conversationId);
                 if (conversation) {
