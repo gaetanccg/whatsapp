@@ -102,7 +102,7 @@ export const getOrCreateConversation = async (req, res) => {
 
 export const createGroupConversation = async (req, res) => {
   try {
-    const { participantIds, groupName } = req.body;
+    const { participantIds, groupName, groupDescription, groupAvatar } = req.body;
 
     if (!participantIds || participantIds.length < 2) {
       return res.status(400).json({ message: 'At least 2 participants are required' });
@@ -117,7 +117,11 @@ export const createGroupConversation = async (req, res) => {
     const conversation = await Conversation.create({
       participants,
       isGroup: true,
-      groupName
+      groupName,
+      groupDescription: groupDescription || null,
+      groupAvatar: groupAvatar || null,
+      creator: req.user._id,
+      admins: [req.user._id]
     });
 
     await conversation.populate('participants', '-password');
@@ -218,6 +222,187 @@ export const deleteConversation = async (req, res) => {
     res.json({ message: 'Conversation deleted' });
   } catch (error) {
     console.error('Delete conversation error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+export const updateGroupInfo = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { groupName, groupDescription, groupAvatar } = req.body;
+    const userId = req.user._id;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid conversation id' });
+    }
+
+    const conversation = await Conversation.findOne({ _id: id, participants: userId, isGroup: true, deletedAt: null });
+    if (!conversation) {
+      return res.status(404).json({ message: 'Group not found' });
+    }
+
+    const isAdmin = conversation.admins.some(a => a.toString() === userId.toString());
+    if (!isAdmin) {
+      return res.status(403).json({ message: 'Only admins can update group info' });
+    }
+
+    if (groupName) conversation.groupName = groupName;
+    if (groupDescription !== undefined) conversation.groupDescription = groupDescription;
+    if (groupAvatar !== undefined) conversation.groupAvatar = groupAvatar;
+
+    await conversation.save();
+
+    conversation.participants.forEach(p => {
+      io.to(p.toString()).emit('groupInfoUpdated', { conversationId: id, groupName, groupDescription, groupAvatar });
+    });
+
+    res.json({ message: 'Group info updated', conversation });
+  } catch (error) {
+    console.error('Update group info error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+export const addGroupMembers = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { userIds } = req.body;
+    const userId = req.user._id;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid conversation id' });
+    }
+
+    if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
+      return res.status(400).json({ message: 'User IDs are required' });
+    }
+
+    const conversation = await Conversation.findOne({ _id: id, participants: userId, isGroup: true, deletedAt: null });
+    if (!conversation) {
+      return res.status(404).json({ message: 'Group not found' });
+    }
+
+    const isAdmin = conversation.admins.some(a => a.toString() === userId.toString());
+    if (!isAdmin) {
+      return res.status(403).json({ message: 'Only admins can add members' });
+    }
+
+    const newMembers = userIds.filter(uid => !conversation.participants.some(p => p.toString() === uid));
+    conversation.participants.push(...newMembers);
+    await conversation.save();
+
+    conversation.participants.forEach(p => {
+      io.to(p.toString()).emit('groupMembersAdded', { conversationId: id, newMembers });
+    });
+
+    res.json({ message: 'Members added', conversation });
+  } catch (error) {
+    console.error('Add group members error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+export const removeGroupMember = async (req, res) => {
+  try {
+    const { id, memberId } = req.params;
+    const userId = req.user._id;
+
+    if (!mongoose.Types.ObjectId.isValid(id) || !mongoose.Types.ObjectId.isValid(memberId)) {
+      return res.status(400).json({ message: 'Invalid id' });
+    }
+
+    const conversation = await Conversation.findOne({ _id: id, participants: userId, isGroup: true, deletedAt: null });
+    if (!conversation) {
+      return res.status(404).json({ message: 'Group not found' });
+    }
+
+    const isAdmin = conversation.admins.some(a => a.toString() === userId.toString());
+    if (!isAdmin && userId.toString() !== memberId) {
+      return res.status(403).json({ message: 'Only admins can remove members' });
+    }
+
+    conversation.participants = conversation.participants.filter(p => p.toString() !== memberId);
+    conversation.admins = conversation.admins.filter(a => a.toString() !== memberId);
+    conversation.moderators = conversation.moderators.filter(m => m.toString() !== memberId);
+
+    await conversation.save();
+
+    conversation.participants.forEach(p => {
+      io.to(p.toString()).emit('groupMemberRemoved', { conversationId: id, memberId });
+    });
+    io.to(memberId).emit('removedFromGroup', { conversationId: id });
+
+    res.json({ message: 'Member removed', conversation });
+  } catch (error) {
+    console.error('Remove group member error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+export const promoteToAdmin = async (req, res) => {
+  try {
+    const { id, memberId } = req.params;
+    const userId = req.user._id;
+
+    if (!mongoose.Types.ObjectId.isValid(id) || !mongoose.Types.ObjectId.isValid(memberId)) {
+      return res.status(400).json({ message: 'Invalid id' });
+    }
+
+    const conversation = await Conversation.findOne({ _id: id, participants: userId, isGroup: true, deletedAt: null });
+    if (!conversation) {
+      return res.status(404).json({ message: 'Group not found' });
+    }
+
+    const isAdmin = conversation.admins.some(a => a.toString() === userId.toString());
+    if (!isAdmin) {
+      return res.status(403).json({ message: 'Only admins can promote members' });
+    }
+
+    if (!conversation.participants.some(p => p.toString() === memberId)) {
+      return res.status(404).json({ message: 'Member not found in group' });
+    }
+
+    if (!conversation.admins.some(a => a.toString() === memberId)) {
+      conversation.admins.push(memberId);
+      await conversation.save();
+    }
+
+    conversation.participants.forEach(p => {
+      io.to(p.toString()).emit('memberPromoted', { conversationId: id, memberId, role: 'admin' });
+    });
+
+    res.json({ message: 'Member promoted to admin', conversation });
+  } catch (error) {
+    console.error('Promote to admin error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+export const updateNotificationSettings = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { muted, muteUntil } = req.body;
+    const userId = req.user._id;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid conversation id' });
+    }
+
+    const conversation = await Conversation.findOne({ _id: id, participants: userId, deletedAt: null });
+    if (!conversation) {
+      return res.status(404).json({ message: 'Conversation not found' });
+    }
+
+    const settings = conversation.notificationSettings.get(userId.toString()) || {};
+    if (muted !== undefined) settings.muted = muted;
+    if (muteUntil !== undefined) settings.muteUntil = muteUntil;
+
+    conversation.notificationSettings.set(userId.toString(), settings);
+    await conversation.save();
+
+    res.json({ message: 'Notification settings updated', settings });
+  } catch (error) {
+    console.error('Update notification settings error:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 };

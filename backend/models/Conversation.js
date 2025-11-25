@@ -14,6 +14,27 @@ const conversationSchema = new mongoose.Schema({
     type: String,
     default: null
   },
+  groupDescription: {
+    type: String,
+    default: null
+  },
+  groupAvatar: {
+    type: String,
+    default: null
+  },
+  creator: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
+  },
+  admins: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
+  moderators: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
   lastMessage: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Message',
@@ -24,12 +45,18 @@ const conversationSchema = new mongoose.Schema({
     of: Number,
     default: {}
   },
-  // Users who have archived this conversation (per-user archivage)
+  notificationSettings: {
+    type: Map,
+    of: {
+      muted: { type: Boolean, default: false },
+      muteUntil: { type: Date, default: null }
+    },
+    default: {}
+  },
   archivedBy: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   }],
-  // Soft delete timestamp; if non-null conversation considered deleted
   deletedAt: {
     type: Date,
     default: null
