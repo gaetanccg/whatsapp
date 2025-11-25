@@ -226,6 +226,10 @@ export const useChatStore = defineStore('chat', {
                 (this.messages || []).forEach(m => {
                     if (m && m._id && m.deleted) this._scheduleRemoval(m._id);
                 });
+                // Émettre un événement pour signaler que tous les messages de la conversation sont chargés
+                try {
+                    window.dispatchEvent(new CustomEvent('conversationMessagesLoaded', { detail: { conversationId } }));
+                } catch {}
             } catch (error) {
                 this.error = error.message;
                 console.error('Fetch messages error:', error);
@@ -288,6 +292,9 @@ export const useChatStore = defineStore('chat', {
         addMessage(message) {
             if (this.currentConversation?._id === message.conversation) {
                 this.messages.push(message);
+                try {
+                    window.dispatchEvent(new CustomEvent('messageAppended', { detail: { message } }));
+                } catch {}
             }
 
             const conv = this.conversations.find(c => c._id === message.conversation);
@@ -296,6 +303,7 @@ export const useChatStore = defineStore('chat', {
                 conv.updatedAt = message.createdAt;
             }
 
+            // If the incoming message is already marked deleted, schedule removal
             if (message && message._id && message.deleted) {
                 this._scheduleRemoval(message._id);
             }
