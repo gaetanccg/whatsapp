@@ -101,7 +101,7 @@
 </template>
 
 <script setup>
-import {ref, watch, computed, nextTick} from 'vue';
+import {ref, watch, computed, nextTick, onMounted, onUnmounted} from 'vue';
 import {useChatStore} from '../store/index.js';
 import socketService from '../services/socket.js';
 import {messageAPI} from '../services/api.js';
@@ -114,6 +114,7 @@ const inputRef = ref(null);
 const fileInput = ref(null);
 const uploading = ref(false);
 const replyingTo = ref(null);
+const replyEventHandler = ref(null);
 
 const { files: pendingFiles, addFiles, removeFile, clearFiles } = usePendingMedia();
 
@@ -156,6 +157,23 @@ watch(() => chatStore.editingMessage, (newValue) => {
         inputRef.value?.focus();
     });
 }, {immediate: true});
+
+onMounted(() => {
+    const handler = (e) => {
+        if (e.detail) {
+            setReplyTo(e.detail);
+        }
+    };
+    window.addEventListener('startReply', handler);
+    // sauvegarde pour suppression
+    replyEventHandler.value = handler;
+});
+
+onUnmounted(() => {
+    if (replyEventHandler.value) {
+        window.removeEventListener('startReply', replyEventHandler.value);
+    }
+});
 
 function triggerFileSelect(){
     fileInput.value && fileInput.value.click();
