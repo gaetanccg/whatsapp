@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import * as Sentry from '@sentry/node';
 import User from '../models/User.js';
 import Message from '../models/Message.js';
 import Conversation from '../models/Conversation.js';
@@ -55,6 +56,13 @@ export const setupSocket = (io) => {
 
         socket.on('sendMessage', async(data) => {
             try {
+                Sentry.addBreadcrumb({
+                    category: 'socket',
+                    message: 'Socket message received',
+                    level: 'info',
+                    data: { userId: socket.userId, conversationId: data.conversationId },
+                });
+
                 const {
                     conversationId,
                     content
@@ -174,6 +182,10 @@ export const setupSocket = (io) => {
                 }
             } catch (error) {
                 console.error('Send message error:', error);
+                Sentry.captureException(error, {
+                    tags: { socket: 'sendMessage' },
+                    extra: { userId: socket.userId },
+                });
                 socket.emit('error', {message: 'Failed to send message'});
             }
         });
