@@ -113,5 +113,84 @@ describe('Session Management Tests', function() {
     expect(historyRes.body.items.length).to.equal(2);
     expect(historyRes.body).to.have.property('total');
   });
+
+  it('should filter login history by eventType', async function() {
+    const reg = await request(app)
+      .post('/api/auth/register')
+      .send({ username: 'u1', email: 'u1@example.com', password: 'password123' });
+    const token = reg.body.token;
+
+    await request(app)
+      .post('/api/auth/logout')
+      .set('Authorization', `Bearer ${token}`);
+
+    const historyRes = await request(app)
+      .get('/api/sessions/history?eventType=logout')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(historyRes.body.items).to.be.an('array');
+    expect(historyRes.body.items.length).to.be.at.least(1);
+    historyRes.body.items.forEach(item => {
+      expect(item.eventType).to.equal('logout');
+    });
+  });
+
+  it('should not revoke already revoked session', async function() {
+    const reg = await request(app)
+      .post('/api/auth/register')
+      .send({ username: 'u1', email: 'u1@example.com', password: 'password123' });
+    const token = reg.body.token;
+    const sessions = await Session.find({});
+    const sessionId = sessions[0]._id.toString();
+
+    await request(app)
+      .delete(`/api/sessions/${sessionId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    const revokeRes = await request(app)
+      .delete(`/api/sessions/${sessionId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(401);
+  });
+
+  it('should not revoke non-existent session', async function() {
+    const reg = await request(app)
+      .post('/api/auth/register')
+      .send({ username: 'u1', email: 'u1@example.com', password: 'password123' });
+    const token = reg.body.token;
+    const fakeId = new mongoose.Types.ObjectId();
+
+    const revokeRes = await request(app)
+      .delete(`/api/sessions/${fakeId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(404);
+
+    expect(revokeRes.body).to.have.property('message', 'Session not found');
+  });
+
+  it('should handle pagination in history', async function() {
+    const reg = await request(app)
+      .post('/api/auth/register')
+      .send({ username: 'u1', email: 'u1@example.com', password: 'password123' });
+    const token = reg.body.token;
+
+    for (let i = 0; i < 5; i++) {
+      await request(app)
+        .post('/api/auth/login')
+        .send({ email: 'u1@example.com', password: 'password123' });
+    }
+
+    const historyRes = await request(app)
+      .get('/api/sessions/history?limit=3&page=1')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(historyRes.body.items.length).to.equal(3);
+    expect(historyRes.body.page).to.equal(1);
+    expect(historyRes.body.limit).to.equal(3);
+    expect(historyRes.body.total).to.be.at.least(6);
+  });
 });
 
