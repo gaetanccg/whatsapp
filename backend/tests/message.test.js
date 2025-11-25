@@ -155,4 +155,34 @@ describe('Message API Tests', function() {
       expect(res.body).to.have.property('message', 'Conversation not found');
     });
   });
+
+  describe('POST /api/messages/reply', function() {
+    it('should send a reply to an existing message', async function() {
+      // créer message original
+      const originalRes = await request(app)
+        .post('/api/messages')
+        .set('Authorization', `Bearer ${user1Token}`)
+        .send({ conversationId, content: 'Original message' })
+        .expect(201);
+
+      const replyRes = await request(app)
+        .post('/api/messages/reply')
+        .set('Authorization', `Bearer ${user2Token}`)
+        .send({ conversationId, content: 'Reply content', replyTo: originalRes.body._id })
+        .expect(201);
+
+      expect(replyRes.body).to.have.property('content', 'Reply content');
+      expect(replyRes.body).to.have.property('replyTo');
+      expect(replyRes.body.replyTo).to.have.property('_id', originalRes.body._id);
+      expect(replyRes.body.replyTo).to.have.property('content', 'Original message');
+    });
+
+    it('should fail replying without replyTo id', async function() {
+      await request(app)
+        .post('/api/messages/reply')
+        .set('Authorization', `Bearer ${user1Token}`)
+        .send({ conversationId, content: 'No target' })
+        .expect(400);
+    });
+  });
 });

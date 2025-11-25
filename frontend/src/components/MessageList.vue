@@ -118,6 +118,11 @@
                     :class="{ 'own-message': isOwnMessage(message) }"
                     @contextmenu.prevent="handleOpenContextMenu($event, message)"
                 >
+                    <!-- Citation (reply) -->
+                    <div v-if="message.replyTo && !message.deleted" class="reply-block mb-2 pa-2">
+                        <div class="text-caption text-grey">Répond à {{ getReplyAuthor(message.replyTo) }}</div>
+                        <div class="reply-snippet">{{ getReplySnippet(message.replyTo) }}</div>
+                    </div>
                     <!-- En-tête du message (expéditeur) -->
                     <div
                         v-if="!isOwnMessage(message)"
@@ -227,6 +232,16 @@
             @click.stop
         >
             <v-list dense>
+                <v-list-item
+                    v-if="canReplyMessage"
+                    @click="handleContextReply"
+                >
+                    <template #prepend>
+                        <v-icon size="small">mdi-reply</v-icon>
+                    </template>
+                    <v-list-item-title>Répondre</v-list-item-title>
+                </v-list-item>
+                <v-divider v-if="canReplyMessage"></v-divider>
                 <v-list-item
                     v-if="canEditMessage"
                     @click="handleContextEdit"
@@ -504,6 +519,11 @@ const canEditMessage = computed(() => {
 const canDeleteMessage = computed(() => {
     const message = contextMenu.value.message;
     return message && !message.deleted && message.sender?._id === authStore.user._id;
+});
+
+const canReplyMessage = computed(() => {
+    const message = contextMenu.value.message;
+    return message && !message.deleted; // tout le monde peut répondre à un message non supprimé
 });
 
 // ============================================================================
@@ -788,6 +808,15 @@ const handleContextReact = (emoji) => {
     closeContextMenu();
 };
 
+const handleContextReply = () => {
+    if (!contextMenu.value.message) return closeContextMenu();
+    // récupérer composant MessageInput pour définir replyingTo via expose
+    // On passe par store: créer une mutation légère
+    // Utilisation d'un event custom pour éviter couplage direct DOM
+    window.dispatchEvent(new CustomEvent('startReply', { detail: contextMenu.value.message }));
+    closeContextMenu();
+};
+
 // ============================================================================
 // EVENT HANDLERS - Événements globaux
 // ============================================================================
@@ -840,6 +869,25 @@ watch(() => chatStore.currentConversation, () => {
 });
 const mediaThumbUrl = (conversationId, thumbName, mediaId) => {
   return `${import.meta.env.VITE_API_URL || 'http://localhost:5001/api'}/media/${mediaId}/thumbnail`;
+};
+
+// Helpers pour les citations (reply)
+const isObjectId = (val) => {
+    return typeof val === 'string' || (val && typeof val === 'object' && val.$oid);
+};
+
+const getReplyAuthor = (reply) => {
+    if (!reply) return 'Message';
+    if (isObjectId(reply)) return 'Message';
+    return reply.sender?.username || 'Message';
+};
+
+const getReplySnippet = (reply) => {
+    if (!reply) return '';
+    if (isObjectId(reply)) return '';
+    const base = reply.content || (reply.media && reply.media.length ? `[${reply.media.length} média(s)]` : '');
+    if (!base) return '';
+    return base.length <= 60 ? base : (base.slice(0,57) + '…');
 };
 </script>
 
@@ -1026,4 +1074,6 @@ const mediaThumbUrl = (conversationId, thumbName, mediaId) => {
 .media-item { position:relative; background:#f0f0f0; border-radius:8px; overflow:hidden; cursor:pointer; display:flex; align-items:center; justify-content:center; }
 .media-item.image .inline-image { width:100%; height:auto; display:block; object-fit:contain; }
 .loading-indicator { position:absolute; bottom:6px; right:6px; }
+.reply-block{ background:#f5f5f5; border-left:3px solid #25D366; border-radius:4px; font-size:12px; }
+.reply-snippet{ font-size:12px; color:#333; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 </style>

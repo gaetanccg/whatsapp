@@ -34,6 +34,7 @@ export const getMessages = async (req, res) => {
     const messages = await Message.find({ conversation: conversationId })
       .populate('sender', '-password')
       .populate('media')
+      .populate({ path: 'replyTo', populate: { path: 'sender', select: '-password' } })
       .sort({ createdAt: -1 })
       .limit(parseInt(limit))
       .skip(parseInt(skip));
@@ -358,6 +359,8 @@ export const replyToMessage = async (req, res) => {
       }
     });
     await conversation.save();
+
+    emitToConversation(conversationId.toString(), 'receiveMessage', message);
 
     res.status(201).json(message);
   } catch (error) {
