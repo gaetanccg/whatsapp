@@ -10,8 +10,9 @@ import userRoutes from './routes/userRoutes.js';
 import conversationRoutes from './routes/conversationRoutes.js';
 import messageRoutes from './routes/messageRoutes.js';
 import sessionRoutes from './routes/sessionRoutes.js';
-import { setupSocket } from './sockets/chatSocket.js';
+import {setupSocket} from './sockets/chatSocket.js';
 import proxyRoutes from './routes/proxyRoutes.js';
+import {setIo} from './sockets/socketEmitter.js';
 
 dotenv.config();
 
@@ -74,6 +75,9 @@ const io = new Server(httpServer, {
         credentials: true
     }
 });
+
+// register io instance for controllers
+setIo(io);
 
 app.use(cors(corsOptions));
 // Ensure preflight requests are handled

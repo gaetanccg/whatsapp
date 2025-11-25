@@ -51,7 +51,7 @@
 
                     <v-col cols="12" md="8" lg="9" class="chat-main">
                         <div class="d-flex flex-column fill-height">
-                            <div class="flex-grow-1" style="overflow: hidden;">
+                            <div class="flex-grow-1 d-flex flex-column" style="overflow: hidden; min-height: 0;">
                                 <MessageList />
                             </div>
                             <MessageInput />
@@ -89,7 +89,7 @@ import {ref, onMounted, onUnmounted} from 'vue';
 import {useRouter} from 'vue-router';
 import {useAuthStore} from '../store/index.js';
 import {useChatStore} from '../store/index.js';
-import { useUiStore } from '../store/uiStore.js';
+import {useUiStore} from '../store/uiStore.js';
 import socketService from '../services/socket.js';
 import ChatList from '../components/ChatList.vue';
 import MessageList from '../components/MessageList.vue';
@@ -123,6 +123,31 @@ onMounted(() => {
             chatStore.incrementUnreadCount(data.conversationId);
             uiStore.showNotification(`New message from ${data.message.sender?.username}`, 'info');
         }
+    });
+
+    socketService.on('messageEdited', (message) => {
+        chatStore.updateMessageInStore(message);
+    });
+
+    socketService.on('messageDeleted', (data) => {
+        // backend may emit either the full updated message or an object { messageId }
+        if (!data) return;
+        if (data._id) {
+            // full message object
+            chatStore.updateMessageInStore(data);
+        } else if (data.messageId) {
+            const messageId = data.messageId;
+            const idx = chatStore.messages.findIndex(m => m._id === messageId);
+            if (idx !== -1) {
+                chatStore.messages[idx].deleted = true;
+                // keep original content but indicate deleted in UI; update store
+                chatStore.updateMessageInStore(chatStore.messages[idx]);
+            }
+        }
+    });
+
+    socketService.on('messageReaction', (message) => {
+        chatStore.reactMessageInStore(message);
     });
 
     socketService.on('onlineUsers', (users) => {
@@ -193,10 +218,17 @@ const goProfile = () => {
 
 .chat-main{
     background-color: #f5f5f5;
+    /* ensure message area can grow/shrink and keep input visible */
+    display: flex;
+    flex-direction: column;
+    /* full viewport height minus app bar */
+    height: calc(100vh - 56px);
+    min-height: 0;
 }
 
-.fill-height{
-    height: 100vh;
+/* ensure the inner container keeps flex behavior */
+.d-flex.flex-column.fill-height > .flex-grow-1{
+    min-height: 0;
 }
 
 /* mobile responsive: sidebar overlay and hamburger button */
@@ -204,10 +236,11 @@ const goProfile = () => {
     display: none;
 }
 
-@media (max-width: 960px) {
+@media (max-width: 960px){
     .mobile-toggle{
         display: inline-flex;
     }
+
     .chat-sidebar{
         position: fixed;
         top: 56px; /* height of app-bar */
@@ -216,13 +249,15 @@ const goProfile = () => {
         height: calc(100vh - 56px);
         background: #ffffff;
         z-index: 60;
-        box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
         transform: translateX(-100%);
         transition: transform 0.26s ease;
     }
-    .chat-sidebar.show {
+
+    .chat-sidebar.show{
         transform: translateX(0);
     }
+
     .chat-main{
         margin-left: 0;
     }

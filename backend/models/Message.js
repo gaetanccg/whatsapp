@@ -24,7 +24,19 @@ const messageSchema = new mongoose.Schema({
     type: String,
     enum: ['text', 'image', 'file'],
     default: 'text'
-  }
+  },
+  edited: {
+    type: Boolean,
+    default: false
+  },
+  deleted: {
+    type: Boolean,
+    default: false
+  },
+  reactions: [{
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    emoji: { type: String }
+  }]
 }, {
   timestamps: true
 });

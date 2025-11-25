@@ -1,400 +1,483 @@
-import { defineStore } from 'pinia';
-import { authAPI, conversationAPI, messageAPI, userAPI, sessionsAPI } from '../services/api.js';
+import {defineStore} from 'pinia';
+import {authAPI, conversationAPI, messageAPI, userAPI, sessionsAPI} from '../services/api.js';
 import socketService from '../services/socket.js';
 
+// private map to track scheduled deletions (not part of the reactive store state)
+const deletionTimers = new Map();
+
 export const useAuthStore = defineStore('auth', {
-  state: () => ({
-    user: JSON.parse(localStorage.getItem('user')) || null,
-    token: localStorage.getItem('token') || null,
-    isAuthenticated: !!localStorage.getItem('token'),
-    sessions: [],
-    history: { items: [], page: 1, limit: 20, total: 0 },
-    contacts: []
-  }),
+    state: () => ({
+        user: JSON.parse(localStorage.getItem('user')) || null,
+        token: localStorage.getItem('token') || null,
+        isAuthenticated: !!localStorage.getItem('token'),
+        sessions: [],
+        history: {
+            items: [],
+            page: 1,
+            limit: 20,
+            total: 0
+        },
+        contacts: []
+    }),
 
-  actions: {
-    patchUser(data) {
-      if (!this.user) return;
-      this.user = { ...this.user, ...data };
-      localStorage.setItem('user', JSON.stringify(this.user));
-    },
-    async register(userData) {
-      const response = await authAPI.register(userData);
-      this.setAuth(response.data);
-      await this.postAuthLoad();
-      return response.data;
-    },
+    actions: {
+        patchUser(data) {
+            if (!this.user) return;
+            this.user = {...this.user, ...data};
+            localStorage.setItem('user', JSON.stringify(this.user));
+        },
+        async register(userData) {
+            const response = await authAPI.register(userData);
+            this.setAuth(response.data);
+            await this.postAuthLoad();
+            return response.data;
+        },
 
-    async login(credentials) {
-      const response = await authAPI.login(credentials);
-      this.setAuth(response.data);
-      await this.postAuthLoad();
-      return response.data;
-    },
+        async login(credentials) {
+            const response = await authAPI.login(credentials);
+            this.setAuth(response.data);
+            await this.postAuthLoad();
+            return response.data;
+        },
 
-    async fetchUser() {
-      const response = await authAPI.getMe();
-      this.user = response.data;
-      localStorage.setItem('user', JSON.stringify(response.data));
-    },
+        async fetchUser() {
+            const response = await authAPI.getMe();
+            this.user = response.data;
+            localStorage.setItem('user', JSON.stringify(response.data));
+        },
 
-    setAuth(data) {
-      this.user = data;
-      this.token = data.token;
-      this.isAuthenticated = true;
-      localStorage.setItem('token', data.token);
-      localStorage.setItem('user', JSON.stringify(data));
-      socketService.connect(data.token);
-    },
+        setAuth(data) {
+            this.user = data;
+            this.token = data.token;
+            this.isAuthenticated = true;
+            localStorage.setItem('token', data.token);
+            localStorage.setItem('user', JSON.stringify(data));
+            socketService.connect(data.token);
+        },
 
-    logout() {
-      this.user = null;
-      this.token = null;
-      this.isAuthenticated = false;
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      socketService.disconnect();
-    },
+        logout() {
+            this.user = null;
+            this.token = null;
+            this.isAuthenticated = false;
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            socketService.disconnect();
+        },
 
-    async backendLogout() {
-      try {
-        await authAPI.logout();
-      } catch (err) {
-        console.error('Backend logout error:', err.response?.data || err.message);
-      }
-      this.logout();
-    },
+        async fetchSessions() {
+            try {
+                const res = await sessionsAPI.list();
+                this.sessions = res.data;
+            } catch (err) {
+                console.error('Fetch sessions error:', err.response?.data || err.message);
+            }
+        },
 
-    async fetchSessions() {
-      try {
-        const res = await sessionsAPI.list();
-        this.sessions = res.data;
-      } catch (err) {
-        console.error('Fetch sessions error:', err.response?.data || err.message);
-      }
-    },
+        async revokeSession(id) {
+            try {
+                await sessionsAPI.revoke(id);
+                this.sessions = this.sessions.filter(s => s._id !== id);
+            } catch (err) {
+                console.error('Revoke session error:', err.response?.data || err.message);
+            }
+        },
 
-    async revokeSession(id) {
-      try {
-        await sessionsAPI.revoke(id);
-        this.sessions = this.sessions.filter(s => s._id !== id);
-      } catch (err) {
-        console.error('Revoke session error:', err.response?.data || err.message);
-      }
-    },
+        async fetchHistory(page = 1, limit = 20) {
+            try {
+                const res = await sessionsAPI.history(page, limit);
+                this.history = res.data;
+            } catch (err) {
+                console.error('Fetch history error:', err.response?.data || err.message);
+            }
+        },
 
-    async fetchHistory(page = 1, limit = 20) {
-      try {
-        const res = await sessionsAPI.history(page, limit);
-        this.history = res.data;
-      } catch (err) {
-        console.error('Fetch history error:', err.response?.data || err.message);
-      }
-    },
+        async postAuthLoad() {
+            await Promise.all([
+                this.fetchSessions(),
+                this.fetchHistory(1, this.history.limit),
+                this.loadContacts()
+            ]);
+        },
 
-    async postAuthLoad() {
-      await Promise.all([
-        this.fetchSessions(),
-        this.fetchHistory(1, this.history.limit),
-        this.loadContacts()
-      ]);
-    },
+        // Contacts actions
+        async loadContacts() {
+            try {
+                const res = await userAPI.listContacts();
+                this.contacts = res.data;
+            } catch (err) {
+                console.error('Load contacts error:', err.response?.data || err.message);
+            }
+        },
 
-    // Contacts actions
-    async loadContacts() {
-      try {
-        const res = await userAPI.listContacts();
-        this.contacts = res.data;
-      } catch (err) {
-        console.error('Load contacts error:', err.response?.data || err.message);
-      }
-    },
+        async addContact(userId) {
+            try {
+                await userAPI.addContact(userId);
+                await this.loadContacts();
+            } catch (err) {
+                console.error('Add contact error:', err.response?.data || err.message);
+                throw err;
+            }
+        },
 
-    async addContact(userId) {
-      try {
-        await userAPI.addContact(userId);
-        await this.loadContacts();
-      } catch (err) {
-        console.error('Add contact error:', err.response?.data || err.message);
-        throw err;
-      }
-    },
+        async removeContact(userId) {
+            try {
+                await userAPI.removeContact(userId);
+                await this.loadContacts();
+            } catch (err) {
+                console.error('Remove contact error:', err.response?.data || err.message);
+                throw err;
+            }
+        },
 
-    async removeContact(userId) {
-      try {
-        await userAPI.removeContact(userId);
-        await this.loadContacts();
-      } catch (err) {
-        console.error('Remove contact error:', err.response?.data || err.message);
-        throw err;
-      }
-    },
+        async blockContact(userId) {
+            try {
+                await userAPI.blockContact(userId);
+                await this.loadContacts();
+                // refresh profile
+                await this.fetchUser();
+            } catch (err) {
+                console.error('Block contact error:', err.response?.data || err.message);
+                throw err;
+            }
+        },
 
-    async blockContact(userId) {
-      try {
-        await userAPI.blockContact(userId);
-        await this.loadContacts();
-        // refresh profile
-        await this.fetchUser();
-      } catch (err) {
-        console.error('Block contact error:', err.response?.data || err.message);
-        throw err;
-      }
-    },
-
-    async unblockContact(userId) {
-      try {
-        await userAPI.unblockContact(userId);
-        await this.loadContacts();
-        await this.fetchUser();
-      } catch (err) {
-        console.error('Unblock contact error:', err.response?.data || err.message);
-        throw err;
-      }
+        async unblockContact(userId) {
+            try {
+                await userAPI.unblockContact(userId);
+                await this.loadContacts();
+                await this.fetchUser();
+            } catch (err) {
+                console.error('Unblock contact error:', err.response?.data || err.message);
+                throw err;
+            }
+        }
     }
-  }
 });
 
 export const useChatStore = defineStore('chat', {
-  state: () => ({
-    conversations: [],
-    currentConversation: null,
-    messages: [],
-    users: [],
-    onlineUsers: [],
-    typingUsers: {},
-    loading: false,
-    error: null,
-    // Added state for search / filter / sort
-    searchTerm: '',
-    filter: '',
-    sortField: 'updatedAt',
-    sortOrder: 'desc'
-  }),
+    state: () => ({
+        conversations: [],
+        currentConversation: null,
+        messages: [],
+        users: [],
+        onlineUsers: [],
+        typingUsers: {},
+        loading: false,
+        error: null,
+        editingMessage: null,
+        // UI state for ChatList controls
+        searchTerm: '',
+        filter: null,
+        sort: 'updatedAt',
+        sortOrder: 'desc'
+    }),
 
-  getters: {
-    sortedConversations: (state) => {
-      // backend already sorts, but local fallback if needed
-      let base = [...state.conversations];
-      // filter out archived if filter set to unarchived
-      if (state.filter === 'unarchived') {
-        base = base.filter(c => !c.archived);
-      } else if (state.filter === 'archived') {
-        base = base.filter(c => c.archived);
-      }
-      if (state.filter === 'group') {
-        base = base.filter(c => c.isGroup);
-      } else if (state.filter === 'direct') {
-        base = base.filter(c => !c.isGroup);
-      }
-      if (state.filter === 'unread') {
-        base = base.filter(c => (c.unreadCount || 0) > 0);
-      }
+    getters: {
+        sortedConversations: (state) => {
+            return [...state.conversations].sort((a, b) => {
+                const aTime = a.lastMessage?.createdAt || a.updatedAt;
+                const bTime = b.lastMessage?.createdAt || b.updatedAt;
+                return new Date(bTime) - new Date(aTime);
+            });
+        },
 
-      if (state.searchTerm) {
-        const lower = state.searchTerm.toLowerCase();
-        base = base.filter(conv => {
-          if (conv.isGroup && conv.groupName) return conv.groupName.toLowerCase().includes(lower);
-          if (!conv.isGroup) {
-            const other = conv.participants.find(p => p._id !== state.currentUserId);
-            return other && other.username.toLowerCase().includes(lower);
-          }
-          return false;
-        });
-      }
-
-      return base.sort((a, b) => {
-        const aTime = a.lastMessage?.createdAt || a.updatedAt;
-        const bTime = b.lastMessage?.createdAt || b.updatedAt;
-        return new Date(bTime) - new Date(aTime);
-      });
+        unreadCount: (state) => {
+            return state.conversations.reduce((total, conv) => total + (conv.unreadCount || 0), 0);
+        }
     },
 
-    unreadCount: (state) => {
-      return state.conversations.reduce((total, conv) => total + (conv.unreadCount || 0), 0);
+    actions: {
+        // schedule automatic removal of a message marked deleted after `delayMs`
+        _scheduleRemoval(messageId, delayMs = 5000) {
+            if (!messageId) return;
+            // if already scheduled, ignore
+            if (deletionTimers.has(messageId)) return;
+            const timer = setTimeout(() => {
+                try {
+                    // remove message from store when timer fires
+                    this.removeMessageFromStore(messageId);
+                } finally {
+                    // clean up timer reference
+                    deletionTimers.delete(messageId);
+                }
+            }, delayMs);
+            deletionTimers.set(messageId, timer);
+        },
+
+        _cancelScheduledRemoval(messageId) {
+            if (!messageId) return;
+            const timer = deletionTimers.get(messageId);
+            if (timer) {
+                clearTimeout(timer);
+                deletionTimers.delete(messageId);
+            }
+        },
+
+        async fetchConversations() {
+            try {
+                this.loading = true;
+                const response = await conversationAPI.getConversations();
+                this.conversations = response.data;
+            } catch (error) {
+                this.error = error.message;
+                console.error('Fetch conversations error:', error);
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async fetchMessages(conversationId) {
+            try {
+                this.loading = true;
+                const response = await messageAPI.getMessages(conversationId);
+                this.messages = response.data;
+                // schedule removal for any messages already marked deleted
+                (this.messages || []).forEach(m => {
+                    if (m && m._id && m.deleted) this._scheduleRemoval(m._id);
+                });
+            } catch (error) {
+                this.error = error.message;
+                console.error('Fetch messages error:', error);
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async fetchUsers() {
+            try {
+                const response = await userAPI.getAllUsers();
+                this.users = response.data;
+            } catch (error) {
+                this.error = error.message;
+                console.error('Fetch users error:', error);
+            }
+        },
+
+        async selectConversation(conversation) {
+            this.currentConversation = conversation;
+            await this.fetchMessages(conversation._id);
+            socketService.joinConversation(conversation._id);
+            socketService.markAsRead(conversation._id);
+
+            const conv = this.conversations.find(c => c._id === conversation._id);
+            if (conv) {
+                conv.unreadCount = 0;
+            }
+        },
+
+        async createOrGetConversation(userId) {
+            try {
+                const response = await conversationAPI.getOrCreateConversation(userId);
+                const conversation = response.data;
+
+                const existingIndex = this.conversations.findIndex(c => c._id === conversation._id);
+                if (existingIndex === -1) {
+                    this.conversations.push(conversation);
+                }
+
+                await this.selectConversation(conversation);
+                return conversation;
+            } catch (error) {
+                this.error = error.message;
+                console.error('Create conversation error:', error);
+            }
+        },
+
+        addMessage(message) {
+            if (this.currentConversation?._id === message.conversation) {
+                this.messages.push(message);
+            }
+
+            const conv = this.conversations.find(c => c._id === message.conversation);
+            if (conv) {
+                conv.lastMessage = message;
+                conv.updatedAt = message.createdAt;
+            }
+
+            // If the incoming message is already marked deleted, schedule removal
+            if (message && message._id && message.deleted) {
+                this._scheduleRemoval(message._id);
+            }
+        },
+
+        updateOnlineUsers(users) {
+            // normalize incoming online user ids to strings to avoid type mismatches
+            const normalized = (users || []).map(u => (u == null ? null : String(u)));
+            this.onlineUsers = normalized;
+            this.users.forEach(user => {
+                user.isOnline = normalized.includes(String(user._id));
+            });
+        },
+
+        updateUserStatus(userId, isOnline, lastSeen = null) {
+            const user = this.users.find(u => u._id === userId);
+            if (user) {
+                user.isOnline = isOnline;
+                if (lastSeen) user.lastSeen = lastSeen;
+            }
+
+            // normalize id for onlineUsers list
+            const sId = userId == null ? null : String(userId);
+            if (isOnline && !this.onlineUsers.includes(sId)) {
+                this.onlineUsers.push(sId);
+            } else if (!isOnline) {
+                this.onlineUsers = this.onlineUsers.filter(id => id !== sId);
+            }
+
+            // If the status change concerns the currently authenticated user, update auth store
+            try {
+                const authStore = useAuthStore();
+                if (authStore.user && authStore.user._id === userId) {
+                    authStore.patchUser({
+                        isOnline,
+                        lastSeen
+                    });
+                }
+            } catch (e) {
+                // in some contexts useAuthStore may not be available; ignore
+            }
+        },
+
+        incrementUnreadCount(conversationId) {
+            const conv = this.conversations.find(c => c._id === conversationId);
+            if (conv && this.currentConversation?._id !== conversationId) {
+                conv.unreadCount = (conv.unreadCount || 0) + 1;
+            }
+        },
+
+        setTyping(userId, username, conversationId, isTyping) {
+            if (this.currentConversation?._id === conversationId) {
+                if (isTyping) {
+                    this.typingUsers[userId] = username;
+                } else {
+                    delete this.typingUsers[userId];
+                }
+            }
+        },
+
+        setEditingMessage(message) {
+            this.editingMessage = message;
+        },
+
+        clearEditingMessage() {
+            this.editingMessage = null;
+        },
+
+        updateMessageInStore(updatedMessage) {
+            const idx = this.messages.findIndex(m => m._id === updatedMessage._id);
+            if (idx !== -1) {
+                this.messages.splice(idx, 1, updatedMessage);
+            }
+
+            // update conversation lastMessage if needed
+            const conv = this.conversations.find(c => c._id === updatedMessage.conversation);
+            if (conv && conv.lastMessage?._id === updatedMessage._id) {
+                conv.lastMessage = updatedMessage;
+            }
+
+            // If message is marked deleted, schedule its removal after 5s.
+            // If it is no longer deleted, cancel any scheduled removal.
+            if (updatedMessage.deleted) {
+                this._scheduleRemoval(updatedMessage._id);
+            } else {
+                this._cancelScheduledRemoval(updatedMessage._id);
+            }
+        },
+
+        removeMessageFromStore(messageId) {
+            // cancel any scheduled removal for this id
+            this._cancelScheduledRemoval(messageId);
+            this.messages = this.messages.filter(m => m._id !== messageId);
+
+            // if lastMessage was deleted, clear or update
+            this.conversations.forEach(conv => {
+                if (conv.lastMessage && conv.lastMessage._id === messageId) {
+                    conv.lastMessage = null;
+                }
+            });
+        },
+
+        reactMessageInStore(message) {
+            // merge incoming message with existing one to avoid losing fields like sender or createdAt
+            if (!message || !message._id) return;
+
+            const idx = this.messages.findIndex(m => m._id === message._id);
+            if (idx !== -1) {
+                const existing = this.messages[idx] || {};
+                // shallow merge: keep existing fields unless overridden by server
+                const merged = {
+                    ...existing, ...message, // ensure nested arrays/objects are replaced by server data when provided
+                    reactions: message.reactions || existing.reactions || [],
+                    sender: message.sender || existing.sender
+                };
+                this.messages.splice(idx, 1, merged);
+            } else {
+                // not present locally: just push (server should send full object)
+                this.messages.push(message);
+            }
+
+            // update conversation lastMessage if needed
+            const conv = this.conversations.find(c => c._id === message.conversation);
+            if (conv && conv.lastMessage?._id === message._id) {
+                conv.lastMessage = message;
+            }
+        },
+
+        // UI helpers for ChatList controls
+        setSearchTerm(term) {
+            // store simple search term; UI triggers fetchConversations if needed
+            this.searchTerm = term;
+        },
+
+        setFilter(filter) {
+            this.filter = filter;
+        },
+
+        setSort(field, order = 'desc') {
+            this.sort = field;
+            this.sortOrder = order;
+        },
+
+        async archiveConversation(conversationId) {
+            try {
+                const res = await conversationAPI.archiveConversation(conversationId);
+                // update local conversation if present
+                const conv = this.conversations.find(c => c._id === conversationId);
+                if (conv) conv.archived = true;
+                return res.data;
+            } catch (err) {
+                console.error('Archive conversation error:', err.response?.data || err.message);
+                throw err;
+            }
+        },
+
+        async unarchiveConversation(conversationId) {
+            try {
+                const res = await conversationAPI.unarchiveConversation(conversationId);
+                const conv = this.conversations.find(c => c._id === conversationId);
+                if (conv) conv.archived = false;
+                return res.data;
+            } catch (err) {
+                console.error('Unarchive conversation error:', err.response?.data || err.message);
+                throw err;
+            }
+        },
+
+        async deleteConversation(conversationId) {
+            try {
+                const res = await conversationAPI.deleteConversation(conversationId);
+                // remove conversation locally
+                this.conversations = this.conversations.filter(c => c._id !== conversationId);
+                // if currentConversation was deleted, clear messages/currentConversation
+                if (this.currentConversation?._id === conversationId) {
+                    this.currentConversation = null;
+                    this.messages = [];
+                }
+                return res.data;
+            } catch (err) {
+                console.error('Delete conversation error:', err.response?.data || err.message);
+                throw err;
+            }
+        }
     }
-  },
-
-  actions: {
-    setSearchTerm(term) {
-      this.searchTerm = term;
-      this.fetchConversations();
-    },
-    setFilter(f) {
-      this.filter = f;
-      this.fetchConversations();
-    },
-    setSort(field, order) {
-      this.sortField = field;
-      this.sortOrder = order || 'desc';
-      this.fetchConversations();
-    },
-    async fetchConversations() {
-      try {
-        this.loading = true;
-        const response = await conversationAPI.getConversations({
-          search: this.searchTerm || undefined,
-          filter: this.filter || undefined,
-          sort: this.sortField || undefined,
-          order: this.sortOrder || undefined
-        });
-        this.conversations = response.data;
-      } catch (error) {
-        this.error = error.message;
-        console.error('Fetch conversations error:', error);
-      } finally {
-        this.loading = false;
-      }
-    },
-
-    async fetchMessages(conversationId) {
-      try {
-        this.loading = true;
-        const response = await messageAPI.getMessages(conversationId);
-        this.messages = response.data;
-      } catch (error) {
-        this.error = error.message;
-        console.error('Fetch messages error:', error);
-      } finally {
-        this.loading = false;
-      }
-    },
-
-    async fetchUsers() {
-      try {
-        const response = await userAPI.getAllUsers();
-        this.users = response.data;
-      } catch (error) {
-        this.error = error.message;
-        console.error('Fetch users error:', error);
-      }
-    },
-
-    async selectConversation(conversation) {
-      this.currentConversation = conversation;
-      await this.fetchMessages(conversation._id);
-      socketService.joinConversation(conversation._id);
-      socketService.markAsRead(conversation._id);
-
-      const conv = this.conversations.find(c => c._id === conversation._id);
-      if (conv) {
-        conv.unreadCount = 0;
-      }
-    },
-
-    async createOrGetConversation(userId) {
-      try {
-        const response = await conversationAPI.getOrCreateConversation(userId);
-        const conversation = response.data;
-
-        const existingIndex = this.conversations.findIndex(c => c._id === conversation._id);
-        if (existingIndex === -1) {
-          this.conversations.push(conversation);
-        }
-
-        await this.selectConversation(conversation);
-        return conversation;
-      } catch (error) {
-        this.error = error.message;
-        console.error('Create conversation error:', error);
-      }
-    },
-
-    addMessage(message) {
-      if (this.currentConversation?._id === message.conversation) {
-        this.messages.push(message);
-      }
-
-      const conv = this.conversations.find(c => c._id === message.conversation);
-      if (conv) {
-        conv.lastMessage = message;
-        conv.updatedAt = message.createdAt;
-      }
-    },
-
-    updateOnlineUsers(users) {
-      // normalize incoming online user ids to strings to avoid type mismatches
-      const normalized = (users || []).map(u => (u == null ? null : String(u)));
-      this.onlineUsers = normalized;
-      this.users.forEach(user => {
-        user.isOnline = normalized.includes(String(user._id));
-      });
-    },
-
-    updateUserStatus(userId, isOnline, lastSeen = null) {
-      const user = this.users.find(u => u._id === userId);
-      if (user) {
-        user.isOnline = isOnline;
-        if (lastSeen) user.lastSeen = lastSeen;
-      }
-
-      // normalize id for onlineUsers list
-      const sId = userId == null ? null : String(userId);
-      if (isOnline && !this.onlineUsers.includes(sId)) {
-        this.onlineUsers.push(sId);
-      } else if (!isOnline) {
-        this.onlineUsers = this.onlineUsers.filter(id => id !== sId);
-      }
-
-      // If the status change concerns the currently authenticated user, update auth store
-      try {
-        const authStore = useAuthStore();
-        if (authStore.user && authStore.user._id === userId) {
-          authStore.patchUser({ isOnline, lastSeen });
-        }
-      } catch (e) {
-        // in some contexts useAuthStore may not be available; ignore
-      }
-    },
-
-    incrementUnreadCount(conversationId) {
-      const conv = this.conversations.find(c => c._id === conversationId);
-      if (conv && this.currentConversation?._id !== conversationId) {
-        conv.unreadCount = (conv.unreadCount || 0) + 1;
-      }
-    },
-
-    setTyping(userId, username, conversationId, isTyping) {
-      if (this.currentConversation?._id === conversationId) {
-        if (isTyping) {
-          this.typingUsers[userId] = username;
-        } else {
-          delete this.typingUsers[userId];
-        }
-      }
-    },
-
-    async archiveConversation(id) {
-      try {
-        await conversationAPI.archiveConversation(id);
-        const conv = this.conversations.find(c => c._id === id);
-        if (conv) conv.archived = true;
-      } catch (err) {
-        console.error('Archive conversation error', err);
-      }
-    },
-
-    async unarchiveConversation(id) {
-      try {
-        await conversationAPI.unarchiveConversation(id);
-        const conv = this.conversations.find(c => c._id === id);
-        if (conv) conv.archived = false;
-      } catch (err) {
-        console.error('Unarchive conversation error', err);
-      }
-    },
-
-    async deleteConversation(id) {
-      try {
-        await conversationAPI.deleteConversation(id);
-        this.conversations = this.conversations.filter(c => c._id !== id);
-        if (this.currentConversation?._id === id) {
-          this.currentConversation = null;
-          this.messages = [];
-        }
-      } catch (err) {
-        console.error('Delete conversation error', err);
-      }
-    }
-  }
 });

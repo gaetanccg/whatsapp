@@ -1,45 +1,61 @@
 <template>
     <v-card class="user-status-list" flat>
-        <div class="user-list-header d-flex align-center">
-            <div class="title">Utilisateurs</div>
+        <div class="user-list-header">
+            <span class="title">Utilisateurs</span>
             <v-spacer></v-spacer>
-            <v-chip small color="green-lighten-1">{{ chatStore.users.length }}</v-chip>
+            <v-chip size="small" color="green-lighten-1">
+                {{ chatStore.users.length }}
+            </v-chip>
         </div>
 
         <v-list dense>
             <v-list-item
-                v-for="user in allUsersList"
+                v-for="user in sortedUsers"
                 :key="user._id"
                 @click="openProfile(user)"
                 class="user-item"
             >
-                <template v-slot:prepend>
+                <template #prepend>
                     <v-badge
                         :color="isUserOnline(user) ? 'success' : 'grey'"
                         dot
                         offset-x="16"
                         offset-y="16"
                     >
-                        <v-avatar size="34" :color="isUserOnline(user) ? 'green-lighten-1' : 'grey'">
-                            <span class="text-white text-caption">{{ user.username[0].toUpperCase() }}</span>
+                        <v-avatar
+                            size="34"
+                            :color="isUserOnline(user) ? 'green-lighten-1' : 'grey'"
+                        >
+                            <span class="text-white text-caption">
+                                {{ getUserInitial(user) }}
+                            </span>
                         </v-avatar>
                     </v-badge>
                 </template>
 
                 <v-list-item-content>
-                    <v-list-item-title class="user-name">{{ user.username }}</v-list-item-title>
-                    <v-list-item-subtitle class="user-lastseen text-caption text-grey">{{ isUserOnline(user) ? 'En ligne' : ('Dernière vue: ' + formatLastSeen(getLastSeen(user))) }}</v-list-item-subtitle>
+                    <v-list-item-title class="user-name">
+                        {{ user.username }}
+                    </v-list-item-title>
+                    <v-list-item-subtitle class="user-status text-caption text-grey">
+                        {{ getUserStatus(user) }}
+                    </v-list-item-subtitle>
                 </v-list-item-content>
             </v-list-item>
 
-            <v-list-item v-if="allUsersList.length === 0">
+            <v-list-item v-if="sortedUsers.length === 0">
                 <v-list-item-title class="text-center text-grey text-caption">
                     Aucun utilisateur
                 </v-list-item-title>
             </v-list-item>
         </v-list>
+
+        <UserProfileModal
+            v-if="selectedUser"
+            v-model="showProfile"
+            :user="selectedUser"
+        />
     </v-card>
-    <user-profile-modal v-if="selectedUser" v-model="showProfile" :user="selectedUser" />
 </template>
 
 <script setup>
@@ -49,45 +65,50 @@ import {formatDateTimeISO} from '../utils/date.js';
 import UserProfileModal from './UserProfileModal.vue';
 
 const chatStore = useChatStore();
-
 const showProfile = ref(false);
 const selectedUser = ref(null);
 
-const allUsersList = computed(() => {
-    // return users sorted by username with online first (based on chatStore.onlineUsers)
-    const users = [...chatStore.users];
-    users.sort((a, b) => {
-        const aOnline = chatStore.onlineUsers.includes(a._id);
-        const bOnline = chatStore.onlineUsers.includes(b._id);
-        if (aOnline === bOnline) {
-            return a.username.localeCompare(b.username);
+const sortedUsers = computed(() => {
+    return [...chatStore.users].sort((a, b) => {
+        const aOnline = isUserOnline(a);
+        const bOnline = isUserOnline(b);
+
+        if (aOnline !== bOnline) {
+            return aOnline ? -1 : 1;
         }
-        return aOnline ? -1 : 1;
+
+        return a.username.localeCompare(b.username);
     });
-    return users;
 });
 
 const isUserOnline = (user) => {
-    if (!user) return false;
-    return chatStore.onlineUsers.includes(user._id);
+    return user?._id && chatStore.onlineUsers.includes(user._id);
+};
+
+const getUserInitial = (user) => {
+    return user?.username?.[0]?.toUpperCase() ?? '?';
 };
 
 const getLastSeen = (user) => {
     if (!user) return null;
-    // prefer store entry
-    const fromStore = chatStore.users.find(u => u._id === (user._id || user));
-    if (fromStore && fromStore.lastSeen) return fromStore.lastSeen;
-    // fallback to user.lastSeen
-    return user.lastSeen || null;
+
+    const fromStore = chatStore.users.find(u => u._id === user._id);
+    return fromStore?.lastSeen ?? user.lastSeen ?? null;
+};
+
+const getUserStatus = (user) => {
+    if (isUserOnline(user)) {
+        return 'En ligne';
+    }
+
+    const lastSeen = getLastSeen(user);
+    return lastSeen ? `Dernière vue: ${formatDateTimeISO(lastSeen)}` : 'Hors ligne';
 };
 
 const openProfile = (user) => {
     selectedUser.value = user;
     showProfile.value = true;
 };
-
-// conversation creation is handled from the profile modal's Message button
-const formatLastSeen = (iso) => formatDateTimeISO(iso);
 </script>
 
 <style scoped>
@@ -97,19 +118,20 @@ const formatLastSeen = (iso) => formatDateTimeISO(iso);
 }
 
 .user-list-header{
-    display:flex;
-    align-items:center;
+    display: flex;
+    align-items: center;
     padding: 8px 12px;
     border-bottom: 1px solid #eee;
 }
 
 .title{
-    font-weight:700;
+    font-weight: 700;
+    font-size: 0.95rem;
 }
 
 .user-item{
     cursor: pointer;
-    transition: background-color 0.12s;
+    transition: background-color 0.12s ease;
     padding: 6px 12px;
 }
 
@@ -119,10 +141,10 @@ const formatLastSeen = (iso) => formatDateTimeISO(iso);
 
 .user-name{
     font-size: 0.95rem;
-    font-weight:600;
+    font-weight: 600;
 }
 
-.user-lastseen{
+.user-status{
     color: #757575;
 }
 </style>
