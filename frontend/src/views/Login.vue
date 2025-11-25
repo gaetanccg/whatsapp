@@ -28,6 +28,24 @@
                     :error-messages="errors.password"
                   ></v-text-field>
 
+                  <v-checkbox
+                    v-model="rememberMe"
+                    label="Remember me"
+                    color="green-darken-1"
+                    hide-details
+                    class="mb-2"
+                  ></v-checkbox>
+
+                  <v-btn
+                    variant="text"
+                    size="small"
+                    color="green-darken-1"
+                    :to="{ name: 'ForgotPassword' }"
+                    class="text-none pa-0"
+                  >
+                    Forgot password?
+                  </v-btn>
+
                   <v-alert v-if="error" type="error" class="mt-3">
                     {{ error }}
                   </v-alert>
@@ -69,6 +87,7 @@ const authStore = useAuthStore();
 
 const email = ref('');
 const password = ref('');
+const rememberMe = ref(false);
 const loading = ref(false);
 const error = ref('');
 const errors = ref({});
@@ -82,8 +101,19 @@ const handleLogin = async () => {
     return;
   }
 
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email.value)) {
+    errors.value.email = 'Please enter a valid email address';
+    return;
+  }
+
   if (!password.value) {
     errors.value.password = 'Password is required';
+    return;
+  }
+
+  if (password.value.length < 6) {
+    errors.value.password = 'Password must be at least 6 characters';
     return;
   }
 
@@ -91,11 +121,20 @@ const handleLogin = async () => {
     loading.value = true;
     await authStore.login({
       email: email.value,
-      password: password.value
+      password: password.value,
+      rememberMe: rememberMe.value
     });
     router.push('/');
   } catch (err) {
-    error.value = err.response?.data?.message || 'Login failed';
+    if (err.response?.status === 401) {
+      error.value = 'Invalid email or password. Please try again.';
+    } else if (err.response?.status === 429) {
+      error.value = 'Too many login attempts. Please try again later.';
+    } else if (err.response?.status === 403) {
+      error.value = 'Your account has been suspended. Please contact support.';
+    } else {
+      error.value = err.response?.data?.message || 'Login failed. Please check your connection and try again.';
+    }
   } finally {
     loading.value = false;
   }

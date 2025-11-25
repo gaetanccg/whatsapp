@@ -6,30 +6,16 @@
           <v-col cols="12" sm="8" md="4">
             <v-card class="elevation-12">
               <v-toolbar color="green-darken-1" dark>
-                <v-toolbar-title>WhatsApp Clone - Register</v-toolbar-title>
+                <v-toolbar-title>Reset Password</v-toolbar-title>
               </v-toolbar>
               <v-card-text>
-                <v-form @submit.prevent="handleRegister">
-                  <v-text-field
-                    v-model="username"
-                    label="Username"
-                    prepend-icon="mdi-account"
-                    required
-                    :error-messages="errors.username"
-                  ></v-text-field>
-
-                  <v-text-field
-                    v-model="email"
-                    label="Email"
-                    type="email"
-                    prepend-icon="mdi-email"
-                    required
-                    :error-messages="errors.email"
-                  ></v-text-field>
-
+                <v-alert v-if="successMessage" type="success" class="mb-3">
+                  {{ successMessage }}
+                </v-alert>
+                <v-form v-if="!successMessage" @submit.prevent="handleResetPassword">
                   <v-text-field
                     v-model="password"
-                    label="Password"
+                    label="New Password"
                     type="password"
                     prepend-icon="mdi-lock"
                     required
@@ -51,21 +37,22 @@
                 </v-form>
               </v-card-text>
               <v-card-actions>
-                <v-spacer></v-spacer>
                 <v-btn
                   color="green-darken-1"
                   variant="text"
                   :to="{ name: 'Login' }"
                 >
-                  Login
+                  Back to Login
                 </v-btn>
+                <v-spacer></v-spacer>
                 <v-btn
+                  v-if="!successMessage"
                   color="green-darken-1"
                   variant="elevated"
-                  @click="handleRegister"
+                  @click="handleResetPassword"
                   :loading="loading"
                 >
-                  Register
+                  Reset Password
                 </v-btn>
               </v-card-actions>
             </v-card>
@@ -77,40 +64,32 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
-import { useRouter } from 'vue-router';
-import { useAuthStore } from '../store/index.js';
+import { ref, onMounted } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import { authAPI } from '../services/api.js';
 
+const route = useRoute();
 const router = useRouter();
-const authStore = useAuthStore();
 
-const username = ref('');
-const email = ref('');
 const password = ref('');
 const confirmPassword = ref('');
 const loading = ref(false);
 const error = ref('');
 const errors = ref({});
+const successMessage = ref('');
+const token = ref('');
 
-const handleRegister = async () => {
+onMounted(() => {
+  token.value = route.query.token || '';
+  if (!token.value) {
+    error.value = 'Invalid or missing reset token';
+  }
+});
+
+const handleResetPassword = async () => {
   errors.value = {};
   error.value = '';
-
-  if (!username.value) {
-    errors.value.username = 'Username is required';
-    return;
-  }
-
-  if (!email.value) {
-    errors.value.email = 'Email is required';
-    return;
-  }
-
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(email.value)) {
-    errors.value.email = 'Please enter a valid email address';
-    return;
-  }
+  successMessage.value = '';
 
   if (!password.value) {
     errors.value.password = 'Password is required';
@@ -127,24 +106,20 @@ const handleRegister = async () => {
     return;
   }
 
+  if (!token.value) {
+    error.value = 'Invalid or missing reset token';
+    return;
+  }
+
   try {
     loading.value = true;
-    await authStore.register({
-      username: username.value,
-      email: email.value,
-      password: password.value
-    });
-    router.push('/');
+    await authAPI.resetPassword(token.value, password.value);
+    successMessage.value = 'Password reset successfully! Redirecting to login...';
+    setTimeout(() => {
+      router.push({ name: 'Login' });
+    }, 2000);
   } catch (err) {
-    if (err.response?.status === 409) {
-      error.value = 'An account with this email already exists. Please login instead.';
-    } else if (err.response?.status === 400) {
-      error.value = err.response?.data?.message || 'Invalid registration data. Please check your inputs.';
-    } else if (err.response?.status === 429) {
-      error.value = 'Too many registration attempts. Please try again later.';
-    } else {
-      error.value = err.response?.data?.message || 'Registration failed. Please try again.';
-    }
+    error.value = err.response?.data?.message || 'Failed to reset password. The link may have expired.';
   } finally {
     loading.value = false;
   }
