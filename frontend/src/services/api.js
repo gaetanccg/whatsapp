@@ -133,4 +133,28 @@ export const sessionsAPI = {
   history: (page = 1, limit = 20) => api.get(`/sessions/history?page=${page}&limit=${limit}`)
 };
 
+export const mediaAPI = {
+  upload: (conversationId, files, content = '', options = {}) => {
+    const form = new FormData();
+    form.append('conversationId', conversationId);
+    if (content) form.append('content', content);
+    files.forEach(f => form.append('files', f));
+    return api.post('/media', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      signal: options.signal,
+      onUploadProgress: options.onUploadProgress
+    });
+  },
+  download: (mediaId) => api.get(`/media/${mediaId}`, { responseType: 'blob' }),
+  thumbnail: (mediaId) => api.get(`/media/${mediaId}/thumbnail`, { responseType: 'blob' }),
+  view: (mediaId) => api.get(`/media/${mediaId}/raw`, { responseType: 'blob' }),
+  delete: (mediaId) => api.delete(`/media/${mediaId}`),
+  getConversationMedia: (conversationId, params = {}) => {
+    const searchParams = new URLSearchParams();
+    if (params.limit) searchParams.append('limit', params.limit);
+    if (params.skip) searchParams.append('skip', params.skip);
+    return api.get(`/media/conversation/${conversationId}${searchParams.toString() ? `?${searchParams.toString()}` : ''}`);
+  }
+};
+
 export default api;

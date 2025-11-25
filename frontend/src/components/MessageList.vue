@@ -46,6 +46,10 @@
                     >
                         <v-icon>{{ isUserBlocked ? 'mdi-account-lock-open' : 'mdi-account-cancel' }}</v-icon>
                     </v-btn>
+
+                    <v-btn icon size="small" title="Voir les médias" @click.stop="showMediaDialog = true">
+                        <v-icon>mdi-image-multiple</v-icon>
+                    </v-btn>
                     <v-btn
                         icon
                         size="small"
@@ -287,6 +291,8 @@
             </v-list>
         </div>
 
+        <ConversationMediaFiles v-if="chatStore.currentConversation" :conversationId="chatStore.currentConversation._id" v-model:show="showMediaDialog" />
+
         <!-- user profile modal for header avatar -->
         <user-profile-modal v-if="selectedUser" v-model="showProfile" :user="selectedUser" />
         <media-preview-modal v-model="showPreview" :media="previewMedia" />
@@ -312,11 +318,14 @@ import {messageAPI} from '../services/api.js';
 import MediaPreviewModal from './MediaPreviewModal.vue';
 import GroupManagementModal from './GroupManagementModal.vue';
 import mediaAPI from '../services/mediaApi.js';
+import ConversationMediaFiles from './ConversationMediaFiles.vue';
 
 // Stores
 const chatStore = useChatStore();
 const authStore = useAuthStore();
 const uiStore = useUiStore();
+
+const showMediaDialog = ref(false);
 
 // Refs
 const messageContainer = ref(null);
@@ -828,7 +837,7 @@ const handleContextReply = () => {
     // récupérer composant MessageInput pour définir replyingTo via expose
     // On passe par store: créer une mutation légère
     // Utilisation d'un event custom pour éviter couplage direct DOM
-    window.dispatchEvent(new CustomEvent('startReply', { detail: contextMenu.value.message }));
+    window.dispatchEvent(new CustomEvent('startReply', {detail: contextMenu.value.message}));
     closeContextMenu();
 };
 
@@ -882,28 +891,6 @@ watch(() => chatStore.currentConversation, () => {
     scrollToBottom();
     closeContextMenu();
 });
-const mediaThumbUrl = (conversationId, thumbName, mediaId) => {
-    return `${import.meta.env.VITE_API_URL || 'http://localhost:5001/api'}/media/${mediaId}/thumbnail`;
-};
-
-// Helpers pour les citations (reply)
-const isObjectId = (val) => {
-    return typeof val === 'string' || (val && typeof val === 'object' && val.$oid);
-};
-
-const getReplyAuthor = (reply) => {
-    if (!reply) return 'Message';
-    if (isObjectId(reply)) return 'Message';
-    return reply.sender?.username || 'Message';
-};
-
-const getReplySnippet = (reply) => {
-    if (!reply) return '';
-    if (isObjectId(reply)) return '';
-    const base = reply.content || (reply.media && reply.media.length ? `[${reply.media.length} média(s)]` : '');
-    if (!base) return '';
-    return base.length <= 60 ? base : (base.slice(0,57) + '…');
-};
 </script>
 
 <style scoped>
@@ -1114,15 +1101,19 @@ const getReplySnippet = (reply) => {
     bottom: 6px;
     right: 6px;
 }
+
 .reply-block{
-    background:#f5f5f5;
-    border-left:3px solid #25D366;
-    border-radius:4px; font-size:12px;
+    background: #f5f5f5;
+    border-left: 3px solid #25D366;
+    border-radius: 4px;
+    font-size: 12px;
 }
+
 .reply-snippet{
-    font-size:12px; color:#333;
-    white-space:nowrap;
-    overflow:hidden;
-    text-overflow:ellipsis;
+    font-size: 12px;
+    color: #333;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 </style>
