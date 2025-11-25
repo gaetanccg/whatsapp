@@ -16,7 +16,10 @@
 
             <div class="header-info">
                 <div class="conversation-title">{{ conversationName }}</div>
-                <div v-if="otherParticipant" class="text-caption text-grey">
+                <div v-if="chatStore.currentConversation.isGroup" class="text-caption text-grey">
+                    {{ chatStore.currentConversation.participants?.length || 0 }} membres
+                </div>
+                <div v-else-if="otherParticipant" class="text-caption text-grey">
                     <span v-if="isParticipantOnline">En ligne</span>
                     <span v-else>Dernière vue: {{ participantLastSeen }}</span>
                 </div>
@@ -26,6 +29,16 @@
 
             <div class="header-actions">
                 <v-btn
+                    v-if="chatStore.currentConversation.isGroup"
+                    icon
+                    size="small"
+                    title="Gérer le groupe"
+                    @click.stop="openGroupSettings"
+                >
+                    <v-icon>mdi-account-group</v-icon>
+                </v-btn>
+                <v-btn
+                    v-else
                     icon
                     size="small"
                     title="Voir le profil"
@@ -231,6 +244,14 @@
         <!-- user profile modal for header avatar -->
         <user-profile-modal v-if="selectedUser" v-model="showProfile" :user="selectedUser" />
         <media-preview-modal v-model="showPreview" :media="previewMedia" />
+
+        <!-- Group management modal -->
+        <group-management-modal
+            v-model:show="showGroupManagement"
+            :conversation="chatStore.currentConversation"
+            :is-new-group="false"
+            @group-updated="handleGroupUpdated"
+        />
     </v-card>
 </template>
 
@@ -242,6 +263,7 @@ import {formatDateTimeISO} from '../utils/date.js';
 import UserProfileModal from './UserProfileModal.vue';
 import {messageAPI} from '../services/api.js';
 import MediaPreviewModal from './MediaPreviewModal.vue';
+import GroupManagementModal from './GroupManagementModal.vue';
 import mediaAPI from '../services/mediaApi.js';
 
 // Stores
@@ -254,6 +276,7 @@ const showProfile = ref(false);
 const selectedUser = ref(null);
 const showPreview = ref(false);
 const previewMedia = ref(null);
+const showGroupManagement = ref(false);
 
 // Map des URLs objets pour affichage inline des images
 const inlineSrc = reactive({});
@@ -612,6 +635,21 @@ const handleReact = async(message, emoji) => {
         chatStore.reactMessageInStore(response.data);
     } catch (error) {
         console.error('Erreur lors de l\'ajout de la réaction:', error);
+    }
+};
+
+// ============================================================================
+// MÉTHODES - Gestion du groupe
+// ============================================================================
+
+const openGroupSettings = () => {
+    showGroupManagement.value = true;
+};
+
+const handleGroupUpdated = async () => {
+    await chatStore.loadConversations();
+    if (chatStore.currentConversation?._id) {
+        await chatStore.selectConversation(chatStore.currentConversation._id);
     }
 };
 
