@@ -74,10 +74,23 @@ export const setupSocket = (io) => {
                     conversation: conversationId,
                     sender: socket.userId,
                     content,
-                    readBy: [{ user: socket.userId, readAt: new Date() }]
+                    readBy: [
+                        {
+                            user: socket.userId,
+                            readAt: new Date()
+                        }
+                    ]
                 });
 
-                await message.populate('sender', '-password').populate('media');
+                // message.populate(...) retourne une Promise et ne supporte pas le chaînage
+                // dans certaines versions : utiliser un seul appel avec un tableau de chemins
+                await message.populate([
+                    {
+                        path: 'sender',
+                        select: '-password'
+                    },
+                    {path: 'media'}
+                ]);
 
                 conversation.lastMessage = message._id;
                 conversation.participants.forEach(participant => {
@@ -136,10 +149,20 @@ export const setupSocket = (io) => {
             try {
                 const {conversationId} = data;
 
-                await Message.updateMany({
-                    conversation: conversationId,
-                    sender: {$ne: socket.userId}
-                }, {$addToSet: {readBy: { user: socket.userId, readAt: new Date() }}});
+                await Message.updateMany(
+                    {
+                        conversation: conversationId,
+                        sender: {$ne: socket.userId}
+                    },
+                    {
+                        $addToSet: {
+                            readBy: {
+                                user: socket.userId,
+                                readAt: new Date()
+                            }
+                        }
+                    }
+                );
 
                 const conversation = await Conversation.findById(conversationId);
                 if (conversation) {
