@@ -14,9 +14,12 @@
             <v-spacer></v-spacer>
 
             <div class="d-flex align-center right-block">
-                <!-- quick search (opens global search or focuses contact menu) -->
-                <v-btn icon variant="text" title="Rechercher" @click="$emit('openSearch')">
+                <v-btn icon variant="text" title="Rechercher des messages" @click="openMessageSearch">
                     <v-icon>mdi-magnify</v-icon>
+                </v-btn>
+
+                <v-btn icon variant="text" title="Nouveau groupe" @click="openCreateGroup">
+                    <v-icon>mdi-account-multiple-plus</v-icon>
                 </v-btn>
 
                 <ContactMenu />
@@ -89,6 +92,19 @@
         <v-snackbar v-model="uiStore.snackbar.show" :timeout="uiStore.snackbar.timeout" :color="uiStore.snackbar.color" location="top right">
             {{ uiStore.snackbar.message }}
         </v-snackbar>
+
+        <MessageSearch
+            v-model:show="showMessageSearch"
+            :conversations="chatStore.conversations"
+            @message-selected="handleMessageSelected"
+        />
+
+        <GroupManagementModal
+            v-model:show="showGroupModal"
+            :conversation="null"
+            :is-new-group="true"
+            @group-created="handleGroupCreated"
+        />
     </v-app>
 </template>
 
@@ -105,6 +121,8 @@ import MessageInput from '../components/MessageInput.vue';
 import UserStatusList from '../components/UserStatusList.vue';
 import SessionManager from '../components/SessionManager.vue';
 import ContactMenu from '../components/ContactMenu.vue';
+import MessageSearch from '../components/MessageSearch.vue';
+import GroupManagementModal from '../components/GroupManagementModal.vue';
 import { usePendingMedia } from '../composables/usePendingMedia.js';
 
 const router = useRouter();
@@ -116,6 +134,8 @@ const { addFiles } = usePendingMedia();
 const showSessions = ref(false);
 const showSidebar = ref(true);
 const dragActive = ref(false);
+const showMessageSearch = ref(false);
+const showGroupModal = ref(false);
 
 onMounted(() => {
     const token = localStorage.getItem('token');
@@ -205,6 +225,24 @@ const handleLogout = () => {
 
 const goProfile = () => {
     router.push('/profile');
+};
+
+const openMessageSearch = () => {
+    showMessageSearch.value = true;
+};
+
+const openCreateGroup = () => {
+    showGroupModal.value = true;
+};
+
+const handleMessageSelected = async (message) => {
+    await chatStore.selectConversation(message.conversation._id);
+};
+
+const handleGroupCreated = async (group) => {
+    await chatStore.loadConversations();
+    await chatStore.selectConversation(group._id);
+    uiStore.showNotification('Group created successfully', 'success');
 };
 
 function onDragOver(e){

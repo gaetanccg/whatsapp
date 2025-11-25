@@ -75,24 +75,42 @@ export const conversationAPI = {
     return api.get(`/conversations${queryString ? `?${queryString}` : ''}`);
   },
   getOrCreateConversation: (participantId) => api.post('/conversations', { participantId }),
-  createGroupConversation: (participantIds, groupName) =>
-    api.post('/conversations/group', { participantIds, groupName }),
+  createGroupConversation: (data) => api.post('/conversations/group', data),
   archiveConversation: (id) => api.patch(`/conversations/${id}/archive`),
   unarchiveConversation: (id) => api.patch(`/conversations/${id}/unarchive`),
-  deleteConversation: (id) => api.delete(`/conversations/${id}`)
+  deleteConversation: (id) => api.delete(`/conversations/${id}`),
+  updateGroupInfo: (id, data) => api.patch(`/conversations/${id}/group-info`, data),
+  addGroupMembers: (id, userIds) => api.post(`/conversations/${id}/members`, { userIds }),
+  removeGroupMember: (id, memberId) => api.delete(`/conversations/${id}/members/${memberId}`),
+  promoteToAdmin: (id, memberId) => api.patch(`/conversations/${id}/members/${memberId}/promote`),
+  updateNotificationSettings: (id, settings) => api.patch(`/conversations/${id}/notifications`, settings)
 };
 
 export const messageAPI = {
   getMessages: (conversationId, limit = 50, skip = 0) =>
     api.get(`/messages/${conversationId}?limit=${limit}&skip=${skip}`),
-  sendMessage: (conversationId, content) =>
-    api.post('/messages', { conversationId, content }),
+  sendMessage: (conversationId, content, mediaIds) =>
+    api.post('/messages', { conversationId, content, mediaIds }),
+  replyToMessage: (conversationId, content, replyTo, mediaIds) =>
+    api.post('/messages/reply', { conversationId, content, replyTo, mediaIds }),
   editMessage: (messageId, content) =>
     api.put('/messages/edit', { messageId, content }),
   deleteMessage: (messageId) =>
     api.delete(`/messages/${messageId}`),
   reactMessage: (messageId, emoji) =>
-    api.post('/messages/react', { messageId, emoji })
+    api.post('/messages/react', { messageId, emoji }),
+  searchMessages: (params = {}) => {
+    const searchParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        searchParams.append(key, value);
+      }
+    });
+    const queryString = searchParams.toString();
+    return api.get(`/messages/search${queryString ? `?${queryString}` : ''}`);
+  },
+  updateMessageStatus: (messageId, status) =>
+    api.patch('/messages/status', { messageId, status })
 };
 
 export const sessionsAPI = {

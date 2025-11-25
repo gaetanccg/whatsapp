@@ -1,6 +1,18 @@
 <template>
     <v-card flat class="message-input-container">
         <v-card-text class="pa-2">
+            <div v-if="replyingTo" class="reply-preview mb-2 pa-2">
+                <div class="d-flex align-center">
+                    <div class="flex-grow-1">
+                        <div class="text-caption text-grey">Replying to {{ replyingTo.sender?.username }}</div>
+                        <div class="text-body-2">{{ truncateText(replyingTo.content, 50) }}</div>
+                    </div>
+                    <v-btn icon size="x-small" @click="cancelReply">
+                        <v-icon>mdi-close</v-icon>
+                    </v-btn>
+                </div>
+            </div>
+
             <v-form @submit.prevent="handleSendMessage">
                 <div class="d-flex align-center gap-2">
                     <v-text-field
@@ -101,6 +113,7 @@ const messageText = ref('');
 const inputRef = ref(null);
 const fileInput = ref(null);
 const uploading = ref(false);
+const replyingTo = ref(null);
 
 const { files: pendingFiles, addFiles, removeFile, clearFiles } = usePendingMedia();
 
@@ -114,6 +127,25 @@ const isEditing = computed(() => !!chatStore.editingMessage);
 const canSendMessage = computed(() => {
     return !!chatStore.currentConversation && (messageText.value.trim().length > 0 || pendingFiles.value.length > 0);
 });
+
+const truncateText = (text, maxLength) => {
+    if (!text) return '';
+    if (text.length <= maxLength) return text;
+    return text.substring(0, maxLength) + '...';
+};
+
+const cancelReply = () => {
+    replyingTo.value = null;
+};
+
+const setReplyTo = (message) => {
+    replyingTo.value = message;
+    nextTick(() => {
+        inputRef.value?.focus();
+    });
+};
+
+defineExpose({ setReplyTo });
 
 // Synchroniser le texte avec le message en cours d'édition
 watch(() => chatStore.editingMessage, (newValue) => {
@@ -145,13 +177,16 @@ const handleSendMessage = async() => {
         stopTypingIndicator();
         return;
     }
-    if (pendingFiles.value.length) {
+    if (replyingTo.value) {
+        await sendReplyMessage(content);
+    } else if (pendingFiles.value.length) {
         await sendWithMedia(content);
     } else {
         await sendNewMessage(content);
     }
     messageText.value = '';
     clearFiles();
+    replyingTo.value = null;
     stopTypingIndicator();
 };
 
@@ -198,6 +233,35 @@ const sendNewMessage = async(content) => {
     socketService.sendMessage(chatStore.currentConversation._id, content);
 };
 
+const sendReplyMessage = async(content) => {
+    if (!chatStore.currentConversation || !replyingTo.value) return;
+    uploading.value = true;
+    try {
+        const mediaIds = pendingFiles.value.length > 0 ? await uploadMediaFiles() : [];
+        const res = await messageAPI.replyToMessage(
+            chatStore.currentConversation._id,
+            content,
+            replyingTo.value._id,
+            mediaIds
+        );
+        setTimeout(() => {
+            const exists = chatStore.messages.some(m => m._id === res.data._id);
+            if (!exists) chatStore.addMessage(res.data);
+        }, 1500);
+    } catch (err) {
+        console.error('Erreur envoi réponse:', err);
+    } finally {
+        uploading.value = false;
+    }
+};
+
+const uploadMediaFiles = async() => {
+    const formData = new FormData();
+    pendingFiles.value.forEach(f => formData.append('media', f));
+    const res = await mediaAPI.upload(chatStore.currentConversation._id, pendingFiles.value, '', {});
+    return res.data.media?.map(m => m._id) || [];
+};
+
 const handleTyping = () => {
     if (!chatStore.currentConversation) return;
     socketService.sendTyping(chatStore.currentConversation._id, true);
@@ -232,4 +296,5 @@ function iconFor(f){
 .file-chip .thumb{ width:28px; height:28px; border-radius:6px; overflow:hidden; margin-right:6px; }
 .file-chip .thumb img{ width:100%; height:100%; object-fit:cover; }
 .file-chip .name{ max-width:100px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.reply-preview{ background: #f5f5f5; border-left: 3px solid #25D366; border-radius: 4px; }
 </style>
