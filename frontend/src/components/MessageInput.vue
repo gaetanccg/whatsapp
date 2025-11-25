@@ -1,5 +1,5 @@
 <template>
-    <v-card flat class="message-input-container">
+    <v-card flat class="message-input-container" ref="containerRef">
         <v-card-text class="pa-2">
             <div v-if="replyingTo" class="reply-preview mb-2 pa-2">
                 <div class="d-flex align-center">
@@ -14,7 +14,7 @@
             </div>
 
             <v-form @submit.prevent="handleSendMessage">
-                <div class="d-flex align-center gap-2">
+                <div class="d-flex align-center gap-2 position-relative">
                     <v-text-field
                         v-model="messageText"
                         placeholder="Écrire un message..."
@@ -25,6 +25,7 @@
                         :disabled="!chatStore.currentConversation || uploading"
                         class="flex-grow-1"
                         ref="inputRef"
+                        @keydown.esc="closeEmojiPicker"
                     >
                         <template #prepend-inner>
                             <v-btn
@@ -33,31 +34,54 @@
                                 variant="text"
                                 tabindex="-1"
                                 :disabled="uploading"
+                                @mousedown.prevent
                                 @click.stop="triggerFileSelect"
                                 title="Joindre un média"
+                                aria-label="Joindre un média"
                             >
                                 <v-icon color="grey">mdi-paperclip</v-icon>
                             </v-btn>
                             <v-btn
+                                class="emoji-toggle-btn"
                                 icon
                                 size="small"
                                 variant="text"
                                 tabindex="-1"
                                 :disabled="uploading"
+                                @mousedown.prevent
+                                @click.stop="toggleEmojiPicker"
+                                :title="showEmojiPicker ? 'Fermer les emojis' : 'Emoji'"
+                                aria-label="Ouvrir le sélecteur d'emoji"
+                                ref="toggleBtnRef"
                             >
-                                <v-icon color="grey">mdi-emoticon-happy-outline</v-icon>
+                                <v-icon :color="showEmojiPicker ? 'green-darken-2' : 'grey'">mdi-emoticon-happy-outline</v-icon>
                             </v-btn>
                         </template>
                     </v-text-field>
 
-                    <input ref="fileInput" type="file" multiple class="d-none" :accept="accept" @change="handleSelect" />
+                    <!-- Panneau Emoji (positionné fixed) -->
+                    <div
+                        v-if="showEmojiPicker"
+                        ref="emojiPanelRef"
+                        class="emoji-panel"
+                        :style="emojiPanelStyle"
+                        @keydown.esc.stop.prevent="closeEmojiPicker"
+                    >
+                        <EmojiPicker
+                            @select="onSelectEmoji"
+                            :disable-skin-tones="true"
+                            :static-texts="{placeholder: 'Rechercher…'}"
+                        />
+                    </div>
 
+                    <input ref="fileInput" type="file" multiple class="d-none" :accept="accept" @change="handleSelect" />
                     <v-btn
                         icon
                         color="green-darken-1"
                         @click="handleSendMessage"
                         :disabled="!canSendMessage || uploading"
                         :title="isEditing ? 'Modifier' : (uploading ? 'Envoi...' : 'Envoyer')"
+                        aria-label="Envoyer le message"
                     >
                         <v-icon>{{ isEditing ? 'mdi-check' : 'mdi-send' }}</v-icon>
                     </v-btn>
@@ -107,6 +131,8 @@ import socketService from '../services/socket.js';
 import {messageAPI} from '../services/api.js';
 import mediaAPI from '../services/mediaApi.js';
 import { usePendingMedia } from '../composables/usePendingMedia.js';
+import EmojiPicker from 'vue3-emoji-picker';
+import 'vue3-emoji-picker/css';
 
 const chatStore = useChatStore();
 const messageText = ref('');
@@ -115,6 +141,11 @@ const fileInput = ref(null);
 const uploading = ref(false);
 const replyingTo = ref(null);
 const replyEventHandler = ref(null);
+const showEmojiPicker = ref(false);
+const emojiPanelRef = ref(null);
+const containerRef = ref(null);
+const toggleBtnRef = ref(null);
+const emojiPanelStyle = ref({});
 
 const { files: pendingFiles, addFiles, removeFile, clearFiles } = usePendingMedia();
 
@@ -304,6 +335,128 @@ function iconFor(f){
     if (f.__type==='image') return 'mdi-image';
     return 'mdi-file';
 }
+
+let lastCaret = { start: null, end: null };
+
+function positionEmojiPanel(){
+    const anchor = toggleBtnRef.value?.$el || toggleBtnRef.value; // Vuetify VBtn expose $el, fallback
+    if (!anchor) return;
+    const rect = anchor.getBoundingClientRect();
+    const panelW = 280; // largeur définie dans CSS
+    const panelH = 340; // hauteur max
+    let top = rect.bottom + 4;
+    let left = rect.left;
+    const vh = window.innerHeight;
+    const vw = window.innerWidth;
+    // Si dépasse en bas -> afficher au-dessus
+    if (top + panelH > vh - 8){
+        top = rect.top - panelH - 4;
+        if (top < 8) top = 8;
+    }
+    // Ajuster si dépasse à droite
+    if (left + panelW > vw - 8){
+        left = vw - panelW - 8;
+    }
+    emojiPanelStyle.value = {
+        position: 'fixed',
+        top: top + 'px',
+        left: left + 'px',
+        zIndex: 2600
+    };
+}
+
+function toggleEmojiPicker(){
+    showEmojiPicker.value = !showEmojiPicker.value;
+    if (showEmojiPicker.value){
+        captureCaret();
+        nextTick(() => { positionEmojiPanel(); bindOutsideClick(); bindResize(); });
+    } else {
+        unbindOutsideClick();
+        unbindResize();
+    }
+}
+
+function closeEmojiPicker(){
+    if (!showEmojiPicker.value) return;
+    showEmojiPicker.value = false;
+    unbindOutsideClick();
+    unbindResize();
+}
+
+function bindResize(){
+    window.addEventListener('resize', positionEmojiPanel);
+}
+function unbindResize(){
+    window.removeEventListener('resize', positionEmojiPanel);
+}
+
+function captureCaret(){
+    try {
+        const el = inputRef.value?.$el?.querySelector('input, textarea');
+        if (el){
+            lastCaret.start = el.selectionStart;
+            lastCaret.end = el.selectionEnd;
+        }
+    } catch(e){ /* noop */ }
+}
+
+function restoreFocus(){
+    const el = inputRef.value?.$el?.querySelector('input, textarea');
+    if (el){
+        el.focus();
+        if (lastCaret.start !== null){
+            try { el.setSelectionRange(lastCaret.start, lastCaret.start); } catch(e){/* */}
+        }
+    }
+}
+
+function onSelectEmoji(emoji){
+    const symbol = typeof emoji === 'string' ? emoji : (emoji?.i || emoji?.emoji || '');
+    if (!symbol) return;
+    captureCaret();
+    const text = messageText.value;
+    if (lastCaret.start !== null && lastCaret.end !== null){
+        const before = text.slice(0, lastCaret.start);
+        const after = text.slice(lastCaret.end);
+        messageText.value = before + symbol + after;
+        lastCaret.start = before.length + symbol.length;
+        lastCaret.end = lastCaret.start;
+    } else {
+        messageText.value += symbol;
+        lastCaret.start = messageText.value.length;
+        lastCaret.end = lastCaret.start;
+    }
+    nextTick(() => { restoreFocus(); });
+    handleTyping();
+}
+
+watch(() => messageText.value, (val) => {
+    if (!val && showEmojiPicker.value) closeEmojiPicker();
+});
+
+let outsideHandler = null;
+function bindOutsideClick(){
+    outsideHandler = (e) => {
+        if (!emojiPanelRef.value) return;
+        if (emojiPanelRef.value.contains(e.target)) return;
+        if (containerRef.value?.contains(e.target)) {
+            // Click à l'intérieur du container (input / boutons) ne ferme pas sauf si hors panel
+            const toggleBtn = containerRef.value.querySelector('.emoji-toggle-btn');
+            if (toggleBtn && toggleBtn.contains(e.target)) return; // géré par toggle
+        }
+        closeEmojiPicker();
+    };
+    document.addEventListener('mousedown', outsideHandler);
+}
+function unbindOutsideClick(){
+    if (outsideHandler){
+        document.removeEventListener('mousedown', outsideHandler);
+        outsideHandler = null;
+    }
+}
+
+onUnmounted(() => { unbindOutsideClick(); unbindResize(); });
+
 </script>
 
 <style scoped>
@@ -315,4 +468,7 @@ function iconFor(f){
 .file-chip .thumb img{ width:100%; height:100%; object-fit:cover; }
 .file-chip .name{ max-width:100px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .reply-preview{ background: #f5f5f5; border-left: 3px solid #25D366; border-radius: 4px; }
+.emoji-panel{ background:#fff; border:1px solid #ddd; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.15); padding:4px; width: 280px; max-height:340px; overflow:hidden; }
+/* Retrait dépendances de position absolue (gérée inline en fixed) */
+.position-relative{ position: relative; }
 </style>
