@@ -4,6 +4,7 @@ import {Server} from 'socket.io';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import * as Sentry from '@sentry/node';
+import { nodeProfilingIntegration } from '@sentry/profiling-node';
 import connectDB from './config/db.js';
 import authRoutes from './routes/authRoutes.js';
 import userRoutes from './routes/userRoutes.js';
@@ -35,7 +36,17 @@ if (process.env.SENTRY_DSN) {
     Sentry.init({
         dsn: process.env.SENTRY_DSN,
         environment: process.env.NODE_ENV || 'development',
-        tracesSampleRate: 1.0
+        integrations: [
+            nodeProfilingIntegration(),
+        ],
+        tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
+        profilesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
+        beforeSend(event, hint) {
+            if (process.env.NODE_ENV === 'development') {
+                console.log('Sentry Event:', event);
+            }
+            return event;
+        },
     });
 
     app.use(Sentry.Handlers.requestHandler());
@@ -111,16 +122,34 @@ app.get('/health', (req, res) => {
 });
 
 if (process.env.SENTRY_DSN) {
-    app.use(Sentry.Handlers.errorHandler());
+    app.use(Sentry.Handlers.errorHandler({
+        shouldHandleError(error) {
+            return true;
+        },
+    }));
 }
 
-app.use((err, req, res) => {
+app.use((err, req, res, next) => {
     console.error(err.stack);
-    res.status(500)
-       .json({
-           message: 'Something went wrong!',
-           error: err.message
-       });
+
+    if (process.env.SENTRY_DSN) {
+        Sentry.captureException(err, {
+            tags: {
+                endpoint: req.path,
+                method: req.method,
+            },
+            extra: {
+                body: req.body,
+                query: req.query,
+                params: req.params,
+            },
+        });
+    }
+
+    res.status(err.status || 500).json({
+        message: err.message || 'Something went wrong!',
+        error: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
 });
 
 setupSocket(io);

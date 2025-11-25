@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import * as Sentry from '@sentry/node';
 import User from '../models/User.js';
 import Session from '../models/Session.js';
 
@@ -14,6 +15,20 @@ export const protect = async (req, res, next) => {
 
       if (!req.user) {
         return res.status(401).json({ message: 'User not found' });
+      }
+
+      if (process.env.SENTRY_DSN) {
+        Sentry.setUser({
+          id: req.user._id.toString(),
+          username: req.user.username,
+          email: req.user.email,
+        });
+
+        Sentry.setContext('user_details', {
+          isOnline: req.user.isOnline,
+          lastSeen: req.user.lastSeen,
+          contactsCount: req.user.contacts?.length || 0,
+        });
       }
 
       // Validate session via jti
@@ -34,6 +49,11 @@ export const protect = async (req, res, next) => {
       next();
     } catch (error) {
       console.error('Auth middleware error:', error);
+      if (process.env.SENTRY_DSN) {
+        Sentry.captureException(error, {
+          tags: { middleware: 'auth' },
+        });
+      }
       return res.status(401).json({ message: 'Not authorized, token failed' });
     }
   }
