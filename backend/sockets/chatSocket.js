@@ -74,7 +74,7 @@ export const setupSocket = (io) => {
                     conversation: conversationId,
                     sender: socket.userId,
                     content,
-                    readBy: [socket.userId]
+                    readBy: [{ user: socket.userId, readAt: new Date() }]
                 });
 
                 await message.populate('sender', '-password').populate('media');
@@ -139,7 +139,7 @@ export const setupSocket = (io) => {
                 await Message.updateMany({
                     conversation: conversationId,
                     sender: {$ne: socket.userId}
-                }, {$addToSet: {readBy: socket.userId}});
+                }, {$addToSet: {readBy: { user: socket.userId, readAt: new Date() }}});
 
                 const conversation = await Conversation.findById(conversationId);
                 if (conversation) {

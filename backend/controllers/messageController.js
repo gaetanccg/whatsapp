@@ -25,7 +25,7 @@ export const getMessages = async (req, res) => {
 
     await Message.updateMany(
       { conversation: conversationId, sender: { $ne: req.user._id } },
-      { $addToSet: { readBy: req.user._id } }
+      { $addToSet: { readBy: { user: req.user._id, readAt: new Date() } } }
     );
 
     conversation.unreadCount.set(req.user._id.toString(), 0);
@@ -63,7 +63,7 @@ export const sendMessage = async (req, res) => {
       conversation: conversationId,
       sender: req.user._id,
       content: content && content.trim() ? content.trim() : '',
-      readBy: [req.user._id]
+      readBy: [{ user: req.user._id, readAt: new Date() }]
     });
 
     if (Array.isArray(mediaIds) && mediaIds.length > 0) {
