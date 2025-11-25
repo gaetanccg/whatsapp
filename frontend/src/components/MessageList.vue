@@ -87,6 +87,28 @@
                 ></v-progress-circular>
             </div>
 
+            <!-- Conversation bloquée -->
+            <div v-else-if="isConversationBlocked" class="text-center text-grey py-8">
+                <v-icon size="64" color="grey-lighten-1">
+                    mdi-account-cancel
+                </v-icon>
+                <p class="text-h6 mt-4">
+                    Conversation bloquée
+                </p>
+                <p class="text-body-2 mt-2">
+                    Vous ne pouvez pas échanger de messages avec cet utilisateur.
+                </p>
+                <v-btn
+                    v-if="!chatStore.currentConversation.isGroup"
+                    color="primary"
+                    variant="tonal"
+                    class="mt-4"
+                    @click="toggleBlockUser"
+                >
+                    Débloquer {{ conversationName }}
+                </v-btn>
+            </div>
+
             <!-- Messages -->
             <div v-else class="messages-list">
                 <div
@@ -420,6 +442,13 @@ const isUserBlocked = computed(() => {
     return authStore.user?.blocked?.includes(otherUserId) || false;
 });
 
+const isConversationBlocked = computed(() => {
+    if (chatStore.loading) return false;
+    if (!chatStore.currentConversation || chatStore.currentConversation.isGroup) return false;
+    if (chatStore.messages.length > 0) return false;
+    return isUserBlocked.value;
+});
+
 const otherParticipantId = computed(() => {
     const conversation = chatStore.currentConversation;
     if (!conversation?.participants) return null;
@@ -678,8 +707,8 @@ const toggleBlockUser = async () => {
     if (!otherParticipant.value) return;
 
     const otherUserId = otherParticipant.value._id;
-    const action = isUserBlocked.value ? 'unblock' : 'block';
-    const confirmMsg = isUserBlocked.value
+    const wasBlocked = isUserBlocked.value;
+    const confirmMsg = wasBlocked
         ? `Débloquer ${otherParticipant.value.username} ?`
         : `Bloquer ${otherParticipant.value.username} ? Vous ne pourrez plus échanger de messages.`;
 
@@ -688,8 +717,14 @@ const toggleBlockUser = async () => {
     try {
         await chatStore.toggleBlockUser(otherUserId);
         await authStore.loadUser();
+
+        // If unblocking, reload the conversation
+        if (wasBlocked && chatStore.currentConversation) {
+            await chatStore.selectConversation(chatStore.currentConversation);
+        }
+
         uiStore.showNotification(
-            isUserBlocked.value ? 'Utilisateur débloqué' : 'Utilisateur bloqué',
+            wasBlocked ? 'Utilisateur débloqué' : 'Utilisateur bloqué',
             'success'
         );
     } catch (error) {

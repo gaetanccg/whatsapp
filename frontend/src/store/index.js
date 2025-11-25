@@ -238,6 +238,12 @@ export const useChatStore = defineStore('chat', {
             } catch (error) {
                 this.error = error.message;
                 console.error('Fetch messages error:', error);
+
+                // If blocked (403), clear messages and show empty state
+                if (error.response?.status === 403) {
+                    this.messages = [];
+                }
+                throw error;
             } finally {
                 this.loading = false;
             }
@@ -255,13 +261,20 @@ export const useChatStore = defineStore('chat', {
 
         async selectConversation(conversation) {
             this.currentConversation = conversation;
-            await this.fetchMessages(conversation._id);
-            socketService.joinConversation(conversation._id);
-            socketService.markAsRead(conversation._id);
+            try {
+                await this.fetchMessages(conversation._id);
+                socketService.joinConversation(conversation._id);
+                socketService.markAsRead(conversation._id);
 
-            const conv = this.conversations.find(c => c._id === conversation._id);
-            if (conv) {
-                conv.unreadCount = 0;
+                const conv = this.conversations.find(c => c._id === conversation._id);
+                if (conv) {
+                    conv.unreadCount = 0;
+                }
+            } catch (error) {
+                // If blocked, don't join conversation or mark as read
+                if (error.response?.status === 403) {
+                    console.log('Cannot access blocked conversation');
+                }
             }
         },
 
@@ -476,6 +489,16 @@ export const useChatStore = defineStore('chat', {
                 return res.data;
             } catch (err) {
                 console.error('Delete conversation error:', err.response?.data || err.message);
+                throw err;
+            }
+        },
+
+        async toggleBlockUser(userId) {
+            try {
+                const res = await userAPI.toggleBlock(userId);
+                return res.data;
+            } catch (err) {
+                console.error('Toggle block user error:', err.response?.data || err.message);
                 throw err;
             }
         }
