@@ -4,7 +4,7 @@ import {Server} from 'socket.io';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import * as Sentry from '@sentry/node';
-import { nodeProfilingIntegration } from '@sentry/profiling-node';
+import {nodeProfilingIntegration} from '@sentry/profiling-node';
 import connectDB from './config/db.js';
 import authRoutes from './routes/authRoutes.js';
 import userRoutes from './routes/userRoutes.js';
@@ -15,7 +15,7 @@ import {setupSocket} from './sockets/chatSocket.js';
 import proxyRoutes from './routes/proxyRoutes.js';
 import {setIo} from './sockets/socketEmitter.js';
 import mediaRoutes from './routes/mediaRoutes.js';
-import { isFfmpegAvailable } from './utils/mediaProcessing.js';
+import {isFfmpegAvailable} from './utils/mediaProcessing.js';
 
 dotenv.config();
 
@@ -33,12 +33,27 @@ if (!frontendUrl || frontendUrl.includes('<') || frontendUrl.trim() === '') {
 const allowAllCors = process.env.NODE_ENV !== 'production' || process.env.ALLOW_ALL_CORS === 'true';
 
 if (process.env.SENTRY_DSN && process.env.NODE_ENV !== 'test') {
+    // Build integrations array carefully: some versions of the profiling package
+    // may not return an object compatible with Sentry's integration API.
+    const integrations = [];
+
+    try {
+        if (typeof nodeProfilingIntegration === 'function') {
+            const profiling = nodeProfilingIntegration();
+            if (profiling && typeof profiling.setupOnce === 'function') {
+                integrations.push(profiling);
+            } else {
+                console.warn('Profiling integration not compatible with the installed Sentry version — skipping profiling integration.');
+            }
+        }
+    } catch (err) {
+        console.warn('Error while initializing profiling integration, skipping it:', err.message || err);
+    }
+
     Sentry.init({
         dsn: process.env.SENTRY_DSN,
         environment: process.env.NODE_ENV || 'development',
-        integrations: [
-            nodeProfilingIntegration(),
-        ],
+        integrations,
         tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
         profilesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
         beforeSend(event, hint) {
@@ -46,7 +61,7 @@ if (process.env.SENTRY_DSN && process.env.NODE_ENV !== 'test') {
                 console.log('Sentry Event:', event);
             }
             return event;
-        },
+        }
     });
 
     app.use(Sentry.Handlers.requestHandler());
@@ -96,8 +111,11 @@ app.use(cors(corsOptions));
 // Ensure preflight requests are handled
 app.options('*', cors(corsOptions));
 
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({limit: '10mb'}));
+app.use(express.urlencoded({
+    extended: true,
+    limit: '10mb'
+}));
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
@@ -125,7 +143,7 @@ if (process.env.SENTRY_DSN && process.env.NODE_ENV !== 'test') {
     app.use(Sentry.Handlers.errorHandler({
         shouldHandleError(error) {
             return true;
-        },
+        }
     }));
 }
 
@@ -136,13 +154,13 @@ app.use((err, req, res, next) => {
         Sentry.captureException(err, {
             tags: {
                 endpoint: req.path,
-                method: req.method,
+                method: req.method
             },
             extra: {
                 body: req.body,
                 query: req.query,
-                params: req.params,
-            },
+                params: req.params
+            }
         });
     }
 
