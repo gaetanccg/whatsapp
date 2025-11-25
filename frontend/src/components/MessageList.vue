@@ -133,55 +133,55 @@
                         <span v-if="message.deleted" class="text-muted">
                             Message supprimé
                         </span>
-                    <template v-else-if="message.media && message.media.length">
-                      <div class="media-grid">
-                        <div
-                          v-for="m in message.media"
-                          :key="m._id"
-                          :class="['media-item', { image: m.type==='image', video: m.type==='video' }]"
-                          @click="m.type==='image' ? openMedia(m) : (m.type==='video' ? openMedia(m) : null)"
-                        >
-                          <template v-if="m.type==='image'">
-                            <img
-                              :src="inlineSrc[m._id] || thumbSrc[m._id]"
-                              :alt="m.originalFilename"
-                              class="inline-image"
-                              @load="() => onImgLoaded(m)"
-                            />
-                            <v-progress-circular
-                              v-if="loadingImg[m._id] && !inlineSrc[m._id]"
-                              indeterminate
-                              color="green"
-                              size="20"
-                              class="loading-indicator"
-                            />
-                          </template>
-                          <template v-else-if="m.type==='video' && m.thumbnailFilename">
-                            <div class="video-thumb">
-                              <img :src="thumbSrc[m._id]" :alt="m.originalFilename" />
-                              <v-icon class="play-icon">mdi-play-circle-outline</v-icon>
+                        <template v-else-if="message.media && message.media.length">
+                            <div class="media-grid">
+                                <div
+                                    v-for="m in message.media"
+                                    :key="m._id"
+                                    :class="['media-item', { image: m.type==='image', video: m.type==='video' }]"
+                                    @click="m.type==='image' ? openMedia(m) : (m.type==='video' ? openMedia(m) : null)"
+                                >
+                                    <template v-if="m.type==='image'">
+                                        <img
+                                            :src="inlineSrc[m._id] || thumbSrc[m._id]"
+                                            :alt="m.originalFilename"
+                                            class="inline-image"
+                                            @load="() => onImgLoaded(m)"
+                                        />
+                                        <v-progress-circular
+                                            v-if="loadingImg[m._id] && !inlineSrc[m._id]"
+                                            indeterminate
+                                            color="green"
+                                            size="20"
+                                            class="loading-indicator"
+                                        />
+                                    </template>
+                                    <template v-else-if="m.type==='video' && m.thumbnailFilename">
+                                        <div class="video-thumb">
+                                            <img :src="thumbSrc[m._id]" :alt="m.originalFilename" />
+                                            <v-icon class="play-icon">mdi-play-circle-outline</v-icon>
+                                        </div>
+                                    </template>
+                                    <template v-else>
+                                        <div class="file-doc" @click.stop="downloadMedia(m)">
+                                            <v-icon>mdi-file-document</v-icon>
+                                            <span class="filename">{{ m.originalFilename }}</span>
+                                        </div>
+                                    </template>
+                                </div>
                             </div>
-                          </template>
-                          <template v-else>
-                            <div class="file-doc" @click.stop="downloadMedia(m)">
-                              <v-icon>mdi-file-document</v-icon>
-                              <span class="filename">{{ m.originalFilename }}</span>
-                            </div>
-                          </template>
-                        </div>
-                      </div>
-                      <div v-if="message.content" class="text-part">{{ message.content }}</div>
-                    </template>
-                    <template v-else>
-                        {{ message.content }}
-                        <small
-                            v-if="message.edited"
-                            class="text-caption edited-indicator"
-                        >
-                            (modifié)
-                        </small>
-                    </template>
-                  </div>
+                            <div v-if="message.content" class="text-part">{{ message.content }}</div>
+                        </template>
+                        <template v-else>
+                            {{ message.content }}
+                            <small
+                                v-if="message.edited"
+                                class="text-caption edited-indicator"
+                            >
+                                (modifié)
+                            </small>
+                        </template>
+                    </div>
 
                     <!-- Heure et statut -->
                     <div class="message-time">
@@ -317,83 +317,86 @@ const loadingImg = reactive({});
 const thumbSrc = reactive({});
 
 async function loadInlineImage(m) {
-  if (!m || m.type !== 'image') return;
-  if (inlineSrc[m._id] || loadingImg[m._id]) return;
-  loadingImg[m._id] = true;
-  try {
-    const res = await mediaAPI.view(m._id);
-    const blob = new Blob([res.data], { type: res.headers['content-type'] || 'image/*' });
-    inlineSrc[m._id] = URL.createObjectURL(blob);
-  } catch (e) {
-    console.error('Inline image load error', e);
-  } finally {
-    loadingImg[m._id] = false;
-  }
+    if (!m || m.type !== 'image') return;
+    if (inlineSrc[m._id] || loadingImg[m._id]) return;
+    loadingImg[m._id] = true;
+    try {
+        const res = await mediaAPI.view(m._id);
+        const blob = new Blob([res.data], {type: res.headers['content-type'] || 'image/*'});
+        inlineSrc[m._id] = URL.createObjectURL(blob);
+    } catch (e) {
+        console.error('Inline image load error', e);
+    } finally {
+        loadingImg[m._id] = false;
+    }
 }
 
 async function loadThumb(m) {
-  if (!m || !m.thumbnailFilename) return;
-  if (thumbSrc[m._id]) return;
-  try {
-    const res = await mediaAPI.thumbnail(m._id);
-    const blob = new Blob([res.data], { type: res.headers['content-type'] || 'image/jpeg' });
-    thumbSrc[m._id] = URL.createObjectURL(blob);
-  } catch (e) {
-    console.error('Thumbnail load error', e);
-  }
+    if (!m || !m.thumbnailFilename) return;
+    if (thumbSrc[m._id]) return;
+    try {
+        const res = await mediaAPI.thumbnail(m._id);
+        const blob = new Blob([res.data], {type: res.headers['content-type'] || 'image/jpeg'});
+        thumbSrc[m._id] = URL.createObjectURL(blob);
+    } catch (e) {
+        console.error('Thumbnail load error', e);
+    }
 }
 
 function onImgLoaded(m) {
-  // hook si besoin (ex: mesurer dimensions)
+    // hook si besoin (ex: mesurer dimensions)
 }
 
 function openMedia(m) {
-  previewMedia.value = m;
-  showPreview.value = true;
+    previewMedia.value = m;
+    showPreview.value = true;
 }
 
 async function downloadMedia(m) {
-  try {
-    const res = await mediaAPI.download(m._id);
-    const blob = new Blob([res.data], { type: res.headers['content-type'] });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = m.originalFilename;
-    a.click();
-    URL.revokeObjectURL(url);
-  } catch (e) {
-    console.error('Download media error', e);
-  }
+    try {
+        const res = await mediaAPI.download(m._id);
+        const blob = new Blob([res.data], {type: res.headers['content-type']});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = m.originalFilename;
+        a.click();
+        URL.revokeObjectURL(url);
+    } catch (e) {
+        console.error('Download media error', e);
+    }
 }
 
 // Précharger les images inline à chaque mise à jour de la liste
 watch(() => chatStore.messages, (msgs) => {
-  if (!Array.isArray(msgs)) return;
-  for (const msg of msgs) {
-    if (msg.media && msg.media.length) {
-      for (const m of msg.media) {
-        if (m.thumbnailFilename) loadThumb(m);
-        if (m.type === 'image') loadInlineImage(m);
-      }
+    if (!Array.isArray(msgs)) return;
+    for (const msg of msgs) {
+        if (msg.media && msg.media.length) {
+            for (const m of msg.media) {
+                if (m.thumbnailFilename) loadThumb(m);
+                if (m.type === 'image') loadInlineImage(m);
+            }
+        }
     }
-  }
-}, { immediate: true, deep: true });
+}, {
+    immediate: true,
+    deep: true
+});
 
 // Nettoyer les URLs objets pour éviter les leaks
 function revokeAllInline() {
-  for (const id of Object.keys(inlineSrc)) {
-    try { URL.revokeObjectURL(inlineSrc[id]); } catch {}
-    delete inlineSrc[id];
-  }
-  for (const id of Object.keys(thumbSrc)) {
-    try { URL.revokeObjectURL(thumbSrc[id]); } catch {}
-    delete thumbSrc[id];
-  }
+    for (const id of Object.keys(inlineSrc)) {
+        try { URL.revokeObjectURL(inlineSrc[id]); } catch {}
+        delete inlineSrc[id];
+    }
+    for (const id of Object.keys(thumbSrc)) {
+        try { URL.revokeObjectURL(thumbSrc[id]); } catch {}
+        delete thumbSrc[id];
+    }
 }
 
 onBeforeUnmount(() => {
-  revokeAllInline();
+    revokeAllInline();
 });
 
 // Context menu state
@@ -519,22 +522,32 @@ const hasReactions = (message) => {
 };
 
 const getStatusIcon = (status) => {
-    switch(status) {
-        case 'pending': return 'mdi-clock-outline';
-        case 'sent': return 'mdi-check';
-        case 'delivered': return 'mdi-check-all';
-        case 'read': return 'mdi-check-all';
-        default: return 'mdi-check';
+    switch (status) {
+        case 'pending':
+            return 'mdi-clock-outline';
+        case 'sent':
+            return 'mdi-check';
+        case 'delivered':
+            return 'mdi-check-all';
+        case 'read':
+            return 'mdi-check-all';
+        default:
+            return 'mdi-check';
     }
 };
 
 const getStatusColor = (status) => {
-    switch(status) {
-        case 'pending': return 'grey';
-        case 'sent': return 'grey';
-        case 'delivered': return 'grey';
-        case 'read': return 'blue';
-        default: return 'grey';
+    switch (status) {
+        case 'pending':
+            return 'grey';
+        case 'sent':
+            return 'grey';
+        case 'delivered':
+            return 'grey';
+        case 'read':
+            return 'blue';
+        default:
+            return 'grey';
     }
 };
 
@@ -575,7 +588,13 @@ const toggleReaction = async(message, emoji) => {
                 // replace emoji
                 cloned.reactions[existingIdx].emoji = emoji;
             } else {
-                cloned.reactions.push({ user: { _id: authStore.user._id, username: authStore.user.username }, emoji });
+                cloned.reactions.push({
+                    user: {
+                        _id: authStore.user._id,
+                        username: authStore.user.username
+                    },
+                    emoji
+                });
             }
         }
 
@@ -692,7 +711,7 @@ const openGroupSettings = () => {
     showGroupManagement.value = true;
 };
 
-const handleGroupUpdated = async () => {
+const handleGroupUpdated = async() => {
     await chatStore.loadConversations();
     if (chatStore.currentConversation?._id) {
         await chatStore.selectConversation(chatStore.currentConversation._id);
@@ -703,30 +722,26 @@ const handleGroupUpdated = async () => {
 // MÉTHODES - Blocage d'utilisateur
 // ============================================================================
 
-const toggleBlockUser = async () => {
+const toggleBlockUser = async() => {
     if (!otherParticipant.value) return;
 
     const otherUserId = otherParticipant.value._id;
     const wasBlocked = isUserBlocked.value;
-    const confirmMsg = wasBlocked
-        ? `Débloquer ${otherParticipant.value.username} ?`
-        : `Bloquer ${otherParticipant.value.username} ? Vous ne pourrez plus échanger de messages.`;
+    const confirmMsg = wasBlocked ? `Débloquer ${otherParticipant.value.username} ?` : `Bloquer ${otherParticipant.value.username} ? Vous ne pourrez plus échanger de messages.`;
 
     if (!confirm(confirmMsg)) return;
 
     try {
         await chatStore.toggleBlockUser(otherUserId);
-        await authStore.loadUser();
+        // auth store expose `fetchUser()` pour récupérer le profil actuel
+        await authStore.fetchUser();
 
         // If unblocking, reload the conversation
         if (wasBlocked && chatStore.currentConversation) {
             await chatStore.selectConversation(chatStore.currentConversation);
         }
 
-        uiStore.showNotification(
-            wasBlocked ? 'Utilisateur débloqué' : 'Utilisateur bloqué',
-            'success'
-        );
+        uiStore.showNotification(wasBlocked ? 'Utilisateur débloqué' : 'Utilisateur bloqué', 'success');
     } catch (error) {
         console.error('Error toggling block:', error);
         uiStore.showNotification('Erreur lors du blocage/déblocage', 'error');
@@ -839,7 +854,7 @@ watch(() => chatStore.currentConversation, () => {
     closeContextMenu();
 });
 const mediaThumbUrl = (conversationId, thumbName, mediaId) => {
-  return `${import.meta.env.VITE_API_URL || 'http://localhost:5001/api'}/media/${mediaId}/thumbnail`;
+    return `${import.meta.env.VITE_API_URL || 'http://localhost:5001/api'}/media/${mediaId}/thumbnail`;
 };
 </script>
 
@@ -1022,8 +1037,33 @@ const mediaThumbUrl = (conversationId, thumbName, mediaId) => {
     background: rgba(0, 0, 0, 0.3);
 }
 
-.media-grid { display:flex; flex-wrap:wrap; gap:8px; }
-.media-item { position:relative; background:#f0f0f0; border-radius:8px; overflow:hidden; cursor:pointer; display:flex; align-items:center; justify-content:center; }
-.media-item.image .inline-image { width:100%; height:auto; display:block; object-fit:contain; }
-.loading-indicator { position:absolute; bottom:6px; right:6px; }
+.media-grid{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.media-item{
+    position: relative;
+    background: #f0f0f0;
+    border-radius: 8px;
+    overflow: hidden;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.media-item.image .inline-image{
+    width: 100%;
+    height: auto;
+    display: block;
+    object-fit: contain;
+}
+
+.loading-indicator{
+    position: absolute;
+    bottom: 6px;
+    right: 6px;
+}
 </style>

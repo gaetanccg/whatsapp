@@ -367,8 +367,8 @@ export default {
             if (!confirm('Débloquer cet utilisateur ?')) return;
 
             try {
-                await userAPI.toggleBlock(userId);
-                await auth.loadUser();
+                await auth.unblockContact(userId);
+                await auth.fetchUser();
                 await loadBlockedUsers();
                 snackbar.message = 'Utilisateur débloqué';
                 snackbar.color = 'success';

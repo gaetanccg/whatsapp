@@ -54,7 +54,21 @@ export const userAPI = {
   addContact: (id) => api.post(`/users/contacts/${id}`),
   removeContact: (id) => api.delete(`/users/contacts/${id}`),
   blockContact: (id) => api.post(`/users/contacts/${id}/block`),
-  unblockContact: (id) => api.delete(`/users/contacts/${id}/block`)
+  unblockContact: (id) => api.delete(`/users/contacts/${id}/block`),
+  // Blocked users listing
+  getBlockedUsers: () => api.get('/users/blocked'),
+  // Convenience: toggle block server-side (tries block then if already blocked, unblocks)
+  toggleBlock: async (id) => {
+    try {
+      return await api.post(`/users/contacts/${id}/block`);
+    } catch (err) {
+      // If user is already blocked, try to unblock
+      if (err.response && err.response.status === 400 && (err.response.data?.message || '').toLowerCase().includes('already blocked')) {
+        return await api.delete(`/users/contacts/${id}/block`);
+      }
+      throw err;
+    }
+  }
 };
 
 // Proxy helper to forward requests to allowed external hosts via the backend
