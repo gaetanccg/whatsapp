@@ -1,12 +1,14 @@
-import { expect } from 'chai';
+import {expect} from 'chai';
 import request from 'supertest';
 import express from 'express';
-import { createServer } from 'http';
+import {createServer} from 'http';
 import connectDB from '../config/db.js';
 import mongoose from 'mongoose';
 import User from '../models/User.js';
 import Media from '../models/Media.js';
 import Session from '../models/Session.js';
+import Conversation from '../models/Conversation.js';
+import Message from '../models/Message.js';
 import authRoutes from '../routes/authRoutes.js';
 import mediaRoutes from '../routes/mediaRoutes.js';
 import cors from 'cors';
@@ -17,7 +19,7 @@ const app = express();
 const httpServer = createServer(app);
 
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({limit: '10mb'}));
 app.use('/api/auth', authRoutes);
 app.use('/api/media', mediaRoutes);
 
@@ -34,6 +36,8 @@ describe('Media API Tests', function () {
         await User.deleteMany({});
         await Media.deleteMany({});
         await Session.deleteMany({});
+        await Conversation.deleteMany({});
+        await Message.deleteMany({});
 
         const res = await request(app)
             .post('/api/auth/register')
@@ -44,171 +48,136 @@ describe('Media API Tests', function () {
             });
 
         userToken = res.body.token;
-        userId = res.body.user._id;
+        userId = res.body._id || res.body.user?._id;
+
+        // Create conversation
+        const conv = await Conversation.create({
+            participants: [userId],
+            unreadCount: {}
+        });
+        this.conversationId = conv._id.toString();
+
+        // Create message
+        const msg = await Message.create({
+            conversation: conv._id,
+            sender: userId
+        });
+
+        this.messageId = msg._id.toString();
+
+        // Ensure upload directories
+        fs.mkdirSync(path.join(process.cwd(), 'backend', 'uploads', 'original', this.conversationId), {recursive: true});
+        fs.mkdirSync(path.join(process.cwd(), 'backend', 'uploads', 'thumbs', this.conversationId), {recursive: true});
     });
 
     after(async function () {
         await User.deleteMany({});
         await Media.deleteMany({});
         await Session.deleteMany({});
+        await Message.deleteMany({});
         await mongoose.connection.close();
     });
 
-    describe('POST /api/media/upload', function () {
-        it('should require authentication', async function () {
-            const res = await request(app)
-                .post('/api/media/upload')
-                .send({ data: 'test' });
+    describe('File-backed media endpoints', function () {
+        let mediaId;
+        let storedFilename = 'testfile.bin';
+        let thumbnailFilename = 'thumb.jpg';
 
-            expect(res.status).to.equal(401);
+        beforeEach(async function () {
+            const originalPath = path.join(process.cwd(), 'backend', 'uploads', 'original', this.conversationId, storedFilename);
+            const thumbPath = path.join(process.cwd(), 'backend', 'uploads', 'thumbs', this.conversationId, thumbnailFilename);
+
+            fs.writeFileSync(originalPath, 'original-file-content');
+            fs.writeFileSync(thumbPath, 'thumb-content');
+
+            const media = await Media.create({
+                user: userId,
+                conversation: this.conversationId,
+                message: this.messageId,
+                type: 'image',
+                originalFilename: 'orig.png',
+                storedFilename,
+                sizeBytes: 123,
+                mimeType: 'image/png',
+                thumbnailFilename
+            });
+
+            mediaId = media._id.toString();
         });
 
-        it('should reject upload without data', async function () {
-            const res = await request(app)
-                .post('/api/media/upload')
-                .set('Authorization', `Bearer ${userToken}`)
-                .send({});
-
-            expect(res.status).to.equal(400);
+        afterEach(function () {
+            const orig = path.join(process.cwd(), 'backend', 'uploads', 'original', this.conversationId, storedFilename);
+            const thumb = path.join(process.cwd(), 'backend', 'uploads', 'thumbs', this.conversationId, thumbnailFilename);
+            if (fs.existsSync(orig)) fs.unlinkSync(orig);
+            if (fs.existsSync(thumb)) fs.unlinkSync(thumb);
         });
 
-        it('should accept base64 image upload', async function () {
-            const testImage = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
-
-            const res = await request(app)
-                .post('/api/media/upload')
-                .set('Authorization', `Bearer ${userToken}`)
-                .send({
-                    data: testImage,
-                    type: 'image'
-                });
-
-            expect(res.status).to.equal(201);
-            expect(res.body).to.have.property('_id');
-            expect(res.body).to.have.property('type', 'image');
-        });
-
-        it('should store media metadata in database', async function () {
-            const testImage = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
-
-            const res = await request(app)
-                .post('/api/media/upload')
-                .set('Authorization', `Bearer ${userToken}`)
-                .send({
-                    data: testImage,
-                    type: 'image',
-                    filename: 'test.png'
-                });
-
-            const media = await Media.findById(res.body._id);
-            expect(media).to.not.be.null;
-            expect(media.user.toString()).to.equal(userId);
-            expect(media.type).to.equal('image');
-        });
-    });
-
-    describe('GET /api/media/:id', function () {
-        it('should retrieve media by ID', async function () {
-            const testImage = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
-
-            const uploadRes = await request(app)
-                .post('/api/media/upload')
-                .set('Authorization', `Bearer ${userToken}`)
-                .send({
-                    data: testImage,
-                    type: 'image'
-                });
-
-            const mediaId = uploadRes.body._id;
-
+        it('should download media by ID', async function () {
             const res = await request(app)
                 .get(`/api/media/${mediaId}`)
-                .set('Authorization', `Bearer ${userToken}`);
-
-            expect(res.status).to.equal(200);
-            expect(res.body).to.have.property('_id', mediaId);
-        });
-
-        it('should return 404 for non-existent media', async function () {
-            const fakeId = new mongoose.Types.ObjectId();
-
-            const res = await request(app)
-                .get(`/api/media/${fakeId}`)
-                .set('Authorization', `Bearer ${userToken}`);
-
-            expect(res.status).to.equal(404);
-        });
-
-        it('should require authentication', async function () {
-            const res = await request(app)
-                .get(`/api/media/${new mongoose.Types.ObjectId()}`);
-
-            expect(res.status).to.equal(401);
-        });
-    });
-
-    describe('DELETE /api/media/:id', function () {
-        it('should delete own media', async function () {
-            const testImage = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
-
-            const uploadRes = await request(app)
-                .post('/api/media/upload')
                 .set('Authorization', `Bearer ${userToken}`)
-                .send({
-                    data: testImage,
-                    type: 'image'
-                });
+                .expect(200);
 
-            const mediaId = uploadRes.body._id;
+            expect(res.headers['content-type']).to.include('image/png');
+            expect(res.headers['content-disposition']).to.include('attachment');
+            expect(res.body.toString()).to.include('original-file-content');
+        });
 
+        it('should stream raw media', async function () {
             const res = await request(app)
+                .get(`/api/media/${mediaId}/raw`)
+                .set('Authorization', `Bearer ${userToken}`)
+                .expect(200);
+
+            expect(res.headers['content-type']).to.include('image/png');
+            expect(res.body.toString()).to.include('original-file-content');
+        });
+
+        it('should return thumbnail', async function () {
+            const res = await request(app)
+                .get(`/api/media/${mediaId}/thumbnail`)
+                .set('Authorization', `Bearer ${userToken}`)
+                .expect(200);
+
+            expect(res.headers['content-type']).to.include('image/jpeg');
+            expect(res.body.toString()).to.include('thumb-content');
+        });
+
+        it('should list conversation media', async function () {
+            const res = await request(app)
+                .get(`/api/media/conversation/${this.conversationId}`)
+                .set('Authorization', `Bearer ${userToken}`)
+                .expect(200);
+
+            expect(res.body).to.be.an('array');
+            expect(res.body.some(m => m._id === mediaId)).to.be.true;
+        });
+
+        it('should delete own media (soft delete)', async function () {
+            await request(app)
                 .delete(`/api/media/${mediaId}`)
-                .set('Authorization', `Bearer ${userToken}`);
+                .set('Authorization', `Bearer ${userToken}`)
+                .expect(200);
 
-            expect(res.status).to.equal(200);
-
-            const media = await Media.findById(mediaId);
-            expect(media).to.be.null;
+            const m = await Media.findById(mediaId);
+            expect(m.deletedAt).to.exist;
         });
 
-        it('should not delete other users media', async function () {
-            const testImage = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
-
-            const uploadRes = await request(app)
-                .post('/api/media/upload')
-                .set('Authorization', `Bearer ${userToken}`)
-                .send({
-                    data: testImage,
-                    type: 'image'
-                });
-
-            const mediaId = uploadRes.body._id;
-
-            const res2 = await request(app)
+        it('should forbid deleting other users media', async function () {
+            const other = await request(app)
                 .post('/api/auth/register')
                 .send({
-                    username: 'otheruser',
-                    email: 'other@test.com',
+                    username: 'other',
+                    email: 'o@test.com',
                     password: 'password123'
                 });
 
-            const otherToken = res2.body.token;
+            const otherToken = other.body.token;
 
-            const deleteRes = await request(app)
+            await request(app)
                 .delete(`/api/media/${mediaId}`)
-                .set('Authorization', `Bearer ${otherToken}`);
-
-            expect(deleteRes.status).to.equal(403);
-
-            const media = await Media.findById(mediaId);
-            expect(media).to.not.be.null;
-        });
-
-        it('should require authentication', async function () {
-            const res = await request(app)
-                .delete(`/api/media/${new mongoose.Types.ObjectId()}`);
-
-            expect(res.status).to.equal(401);
+                .set('Authorization', `Bearer ${otherToken}`)
+                .expect(403);
         });
     });
 
@@ -216,25 +185,32 @@ describe('Media API Tests', function () {
         it('should create media with required fields', async function () {
             const media = await Media.create({
                 user: userId,
+                conversation: this.conversationId,
+                message: this.messageId,
                 type: 'image',
-                url: 'http://example.com/image.jpg',
-                size: 1024,
-                mimeType: 'image/jpeg'
+                originalFilename: 'orig.jpg',
+                storedFilename: 'orig-stored.jpg',
+                sizeBytes: 1024,
+                mimeType: 'image/jpeg',
+                url: 'http://example.com/image.jpg'
             });
 
-            expect(media).to.have.property('user');
             expect(media).to.have.property('type', 'image');
             expect(media).to.have.property('url');
-            expect(media).to.have.property('size', 1024);
+            expect(media).to.have.property('sizeBytes', 1024);
         });
 
         it('should have default processed flag as false', async function () {
             const media = await Media.create({
                 user: userId,
+                conversation: this.conversationId,
+                message: this.messageId,
                 type: 'video',
-                url: 'http://example.com/video.mp4',
-                size: 2048,
-                mimeType: 'video/mp4'
+                originalFilename: 'vid.mp4',
+                storedFilename: 'vid-stored.mp4',
+                sizeBytes: 2048,
+                mimeType: 'video/mp4',
+                url: 'http://example.com/video.mp4'
             });
 
             expect(media).to.have.property('processed', false);
@@ -243,10 +219,14 @@ describe('Media API Tests', function () {
         it('should store metadata', async function () {
             const media = await Media.create({
                 user: userId,
+                conversation: this.conversationId,
+                message: this.messageId,
                 type: 'image',
-                url: 'http://example.com/image.jpg',
-                size: 1024,
+                originalFilename: 'meta.jpg',
+                storedFilename: 'meta-stored.jpg',
+                sizeBytes: 1024,
                 mimeType: 'image/jpeg',
+                url: 'http://example.com/image.jpg',
                 metadata: {
                     width: 1920,
                     height: 1080

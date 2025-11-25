@@ -252,4 +252,130 @@ describe('Conversation API Tests', function() {
       expect(res.body.some(c => c.groupName === 'AlphaTeam')).to.be.true;
     });
   });
+
+  describe('Group management endpoints', function() {
+    let groupId;
+    let user3Id, user3Token, user4Id;
+
+    beforeEach(async function() {
+      // create extra users
+      const u3 = await request(app).post('/api/auth/register').send({ username: 'user3g', email: 'user3g@example.com', password: 'password123' });
+      user3Id = u3.body._id;
+      user3Token = u3.body.token;
+
+      const u4 = await request(app).post('/api/auth/register').send({ username: 'user4g', email: 'user4g@example.com', password: 'password123' });
+      user4Id = u4.body._id;
+
+      // create group with user2 and user3
+      const grp = await request(app)
+        .post('/api/conversations/group')
+        .set('Authorization', `Bearer ${user1Token}`)
+        .send({ participantIds: [user2Id, user3Id], groupName: 'MgmtGroup' });
+
+      groupId = grp.body._id;
+    });
+
+    it('admin can update group info', async function() {
+      const res = await request(app)
+        .patch(`/api/conversations/${groupId}/group-info`)
+        .set('Authorization', `Bearer ${user1Token}`)
+        .send({ groupName: 'NewName', groupDescription: 'Desc', groupAvatar: 'avatar.png' })
+        .expect(200);
+
+      expect(res.body).to.have.property('message', 'Group info updated');
+      expect(res.body.conversation).to.have.property('groupName', 'NewName');
+    });
+
+    it('non-admin cannot update group info', async function() {
+      await request(app)
+        .patch(`/api/conversations/${groupId}/group-info`)
+        .set('Authorization', `Bearer ${user2Token}`)
+        .send({ groupName: 'Bad' })
+        .expect(403);
+    });
+
+    it('admin can add group members', async function() {
+      const res = await request(app)
+        .post(`/api/conversations/${groupId}/members`)
+        .set('Authorization', `Bearer ${user1Token}`)
+        .send({ userIds: [user4Id] })
+        .expect(200);
+
+      expect(res.body).to.have.property('message', 'Members added');
+      expect(res.body.conversation.participants.map(p => p.toString ? p.toString() : p)).to.include(user4Id);
+    });
+
+    it('non-admin cannot add group members', async function() {
+      await request(app)
+        .post(`/api/conversations/${groupId}/members`)
+        .set('Authorization', `Bearer ${user2Token}`)
+        .send({ userIds: [user4Id] })
+        .expect(403);
+    });
+
+    it('admin can remove a member', async function() {
+      // remove user3
+      const res = await request(app)
+        .delete(`/api/conversations/${groupId}/members/${user3Id}`)
+        .set('Authorization', `Bearer ${user1Token}`)
+        .expect(200);
+
+      expect(res.body).to.have.property('message', 'Member removed');
+      expect(res.body.conversation.participants.map(p => p.toString ? p.toString() : p)).to.not.include(user3Id);
+    });
+
+    it('member can remove themselves', async function() {
+      // user3 removes self
+      const res = await request(app)
+        .delete(`/api/conversations/${groupId}/members/${user3Id}`)
+        .set('Authorization', `Bearer ${user3Token}`)
+        .expect(200);
+
+      expect(res.body).to.have.property('message', 'Member removed');
+    });
+
+    it('admin can promote member to admin', async function() {
+      const res = await request(app)
+        .patch(`/api/conversations/${groupId}/members/${user2Id}/promote`)
+        .set('Authorization', `Bearer ${user1Token}`)
+        .expect(200);
+
+      expect(res.body).to.have.property('message', 'Member promoted to admin');
+      expect(res.body.conversation.admins.map(a => a.toString ? a.toString() : a)).to.include(user2Id);
+    });
+
+    it('non-admin cannot promote', async function() {
+      await request(app)
+        .patch(`/api/conversations/${groupId}/members/${user2Id}/promote`)
+        .set('Authorization', `Bearer ${user2Token}`)
+        .expect(403);
+    });
+
+    it('promote non-member returns 404', async function() {
+      const fakeId = mongoose.Types.ObjectId();
+      await request(app)
+        .patch(`/api/conversations/${groupId}/members/${fakeId}/promote`)
+        .set('Authorization', `Bearer ${user1Token}`)
+        .expect(404);
+    });
+
+    it('update notification settings stores values', async function() {
+      const res = await request(app)
+        .patch(`/api/conversations/${groupId}/notifications`)
+        .set('Authorization', `Bearer ${user1Token}`)
+        .send({ muted: true, muteUntil: Date.now() + 10000 })
+        .expect(200);
+
+      expect(res.body).to.have.property('message', 'Notification settings updated');
+      expect(res.body.settings).to.be.an('object');
+    });
+
+    it('invalid conversation id returns 400 for members endpoint', async function() {
+      await request(app)
+        .post('/api/conversations/invalid-id/members')
+        .set('Authorization', `Bearer ${user1Token}`)
+        .send({ userIds: [user4Id] })
+        .expect(400);
+    });
+  });
 });
