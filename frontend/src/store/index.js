@@ -2,7 +2,6 @@ import {defineStore} from 'pinia';
 import {authAPI, conversationAPI, messageAPI, userAPI, sessionsAPI} from '../services/api.js';
 import socketService from '../services/socket.js';
 
-// private map to track scheduled deletions (not part of the reactive store state)
 const deletionTimers = new Map();
 
 export const useAuthStore = defineStore('auth', {
@@ -99,7 +98,6 @@ export const useAuthStore = defineStore('auth', {
             ]);
         },
 
-        // Contacts actions
         async loadContacts() {
             try {
                 const res = await userAPI.listContacts();
@@ -133,7 +131,6 @@ export const useAuthStore = defineStore('auth', {
             try {
                 await userAPI.blockContact(userId);
                 await this.loadContacts();
-                // refresh profile
                 await this.fetchUser();
             } catch (err) {
                 console.error('Block contact error:', err.response?.data || err.message);
@@ -165,7 +162,6 @@ export const useChatStore = defineStore('chat', {
         loading: false,
         error: null,
         editingMessage: null,
-        // UI state for ChatList controls
         searchTerm: '',
         filter: null,
         sort: 'updatedAt',
@@ -187,17 +183,13 @@ export const useChatStore = defineStore('chat', {
     },
 
     actions: {
-        // schedule automatic removal of a message marked deleted after `delayMs`
         _scheduleRemoval(messageId, delayMs = 5000) {
             if (!messageId) return;
-            // if already scheduled, ignore
             if (deletionTimers.has(messageId)) return;
             const timer = setTimeout(() => {
                 try {
-                    // remove message from store when timer fires
                     this.removeMessageFromStore(messageId);
                 } finally {
-                    // clean up timer reference
                     deletionTimers.delete(messageId);
                 }
             }, delayMs);
@@ -231,7 +223,6 @@ export const useChatStore = defineStore('chat', {
                 this.loading = true;
                 const response = await messageAPI.getMessages(conversationId);
                 this.messages = response.data;
-                // schedule removal for any messages already marked deleted
                 (this.messages || []).forEach(m => {
                     if (m && m._id && m.deleted) this._scheduleRemoval(m._id);
                 });
@@ -239,7 +230,6 @@ export const useChatStore = defineStore('chat', {
                 this.error = error.message;
                 console.error('Fetch messages error:', error);
 
-                // If blocked (403), clear messages and show empty state
                 if (error.response?.status === 403) {
                     this.messages = [];
                 }
@@ -271,7 +261,6 @@ export const useChatStore = defineStore('chat', {
                     conv.unreadCount = 0;
                 }
             } catch (error) {
-                // If blocked, don't join conversation or mark as read
                 if (error.response?.status === 403) {
                     console.log('Cannot access blocked conversation');
                 }
@@ -307,14 +296,12 @@ export const useChatStore = defineStore('chat', {
                 conv.updatedAt = message.createdAt;
             }
 
-            // If the incoming message is already marked deleted, schedule removal
             if (message && message._id && message.deleted) {
                 this._scheduleRemoval(message._id);
             }
         },
 
         updateOnlineUsers(users) {
-            // normalize incoming online user ids to strings to avoid type mismatches
             const normalized = (users || []).map(u => (u == null ? null : String(u)));
             this.onlineUsers = normalized;
             this.users.forEach(user => {
@@ -329,7 +316,6 @@ export const useChatStore = defineStore('chat', {
                 if (lastSeen) user.lastSeen = lastSeen;
             }
 
-            // normalize id for onlineUsers list
             const sId = userId == null ? null : String(userId);
             if (isOnline && !this.onlineUsers.includes(sId)) {
                 this.onlineUsers.push(sId);
@@ -382,14 +368,11 @@ export const useChatStore = defineStore('chat', {
                 this.messages.splice(idx, 1, updatedMessage);
             }
 
-            // update conversation lastMessage if needed
             const conv = this.conversations.find(c => c._id === updatedMessage.conversation);
             if (conv && conv.lastMessage?._id === updatedMessage._id) {
                 conv.lastMessage = updatedMessage;
             }
 
-            // If message is marked deleted, schedule its removal after 5s.
-            // If it is no longer deleted, cancel any scheduled removal.
             if (updatedMessage.deleted) {
                 this._scheduleRemoval(updatedMessage._id);
             } else {
@@ -398,11 +381,9 @@ export const useChatStore = defineStore('chat', {
         },
 
         removeMessageFromStore(messageId) {
-            // cancel any scheduled removal for this id
             this._cancelScheduledRemoval(messageId);
             this.messages = this.messages.filter(m => m._id !== messageId);
 
-            // if lastMessage was deleted, clear or update
             this.conversations.forEach(conv => {
                 if (conv.lastMessage && conv.lastMessage._id === messageId) {
                     conv.lastMessage = null;
@@ -411,13 +392,11 @@ export const useChatStore = defineStore('chat', {
         },
 
         reactMessageInStore(message) {
-            // merge incoming message with existing one to avoid losing fields like sender or createdAt
             if (!message || !message._id) return;
 
             const idx = this.messages.findIndex(m => m._id === message._id);
             if (idx !== -1) {
                 const existing = this.messages[idx] || {};
-                // shallow merge: keep existing fields unless overridden by server
                 const merged = {
                     ...existing, ...message, // ensure nested arrays/objects are replaced by server data when provided
                     reactions: message.reactions || existing.reactions || [],
@@ -425,20 +404,16 @@ export const useChatStore = defineStore('chat', {
                 };
                 this.messages.splice(idx, 1, merged);
             } else {
-                // not present locally: just push (server should send full object)
                 this.messages.push(message);
             }
 
-            // update conversation lastMessage if needed
             const conv = this.conversations.find(c => c._id === message.conversation);
             if (conv && conv.lastMessage?._id === message._id) {
                 conv.lastMessage = message;
             }
         },
 
-        // UI helpers for ChatList controls
         setSearchTerm(term) {
-            // store simple search term; UI triggers fetchConversations if needed
             this.searchTerm = term;
         },
 
@@ -454,7 +429,6 @@ export const useChatStore = defineStore('chat', {
         async archiveConversation(conversationId) {
             try {
                 const res = await conversationAPI.archiveConversation(conversationId);
-                // update local conversation if present
                 const conv = this.conversations.find(c => c._id === conversationId);
                 if (conv) conv.archived = true;
                 return res.data;
@@ -495,8 +469,41 @@ export const useChatStore = defineStore('chat', {
 
         async toggleBlockUser(userId) {
             try {
-                const res = await userAPI.toggleBlock(userId);
-                return res.data;
+                const auth = useAuthStore();
+                const isBlocked = auth.user?.blocked?.includes(userId);
+                if (isBlocked) {
+                    const res = await auth.unblockContact(userId);
+
+                    const current = this.currentConversation;
+                    if (current && !current.isGroup) {
+                        const other = current.participants?.find(p => (typeof p === 'string' ? p !== auth.user._id : (p._id !== auth.user._id)));
+                        const otherId = other ? (typeof other === 'string' ? other : other._id) : null;
+                        if (otherId && String(otherId) === String(userId)) {
+                            await this.fetchMessages(current._id);
+                            this.currentConversation = {...current};
+                        }
+                    }
+
+                    return res;
+                } else {
+                    const res = await auth.blockContact(userId);
+
+                    const current = this.currentConversation;
+                    if (current && !current.isGroup) {
+                        const other = current.participants?.find(p => (typeof p === 'string' ? p !== auth.user._id : (p._id !== auth.user._id)));
+                        const otherId = other ? (typeof other === 'string' ? other : other._id) : null;
+                        if (otherId && String(otherId) === String(userId)) {
+                            this.messages = [];
+
+                            const conv = this.conversations.find(c => c._id === current._id);
+                            if (conv) conv.unreadCount = 0;
+
+                            this.currentConversation = {...current};
+                        }
+                    }
+
+                    return res;
+                }
             } catch (err) {
                 console.error('Toggle block user error:', err.response?.data || err.message);
                 throw err;

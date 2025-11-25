@@ -1,6 +1,6 @@
 import express from 'express';
 import { getAllUsers, getUserById, searchUsers, getProfile, updateProfile, deleteProfile,
-         addContact, removeContact, listContacts, blockContact, unblockContact } from '../controllers/userController.js';
+         addContact, removeContact, listContacts, blockContact, unblockContact, listBlockedUsers } from '../controllers/userController.js';
 import { protect } from '../middlewares/authMiddleware.js';
 
 const router = express.Router();
@@ -15,6 +15,7 @@ router.post('/contacts/:id', protect, addContact);
 router.delete('/contacts/:id', protect, removeContact);
 router.post('/contacts/:id/block', protect, blockContact);
 router.delete('/contacts/:id/block', protect, unblockContact);
+router.get('/blocked', protect, listBlockedUsers);
 router.get('/:id', protect, getUserById);
 
 export default router;
