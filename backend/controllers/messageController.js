@@ -5,21 +5,22 @@ import User from '../models/User.js';
 import { emitToConversation } from '../sockets/socketEmitter.js';
 
 export const getMessages = async (req, res) => {
-  const transaction = Sentry.startTransaction({
-    op: 'message.get',
-    name: 'GET /api/messages/:conversationId',
-  });
+  const transaction = (Sentry && typeof Sentry.startTransaction === 'function')
+    ? Sentry.startTransaction({ op: 'message.get', name: 'GET /api/messages/:conversationId' })
+    : null;
 
   try {
     const { conversationId } = req.params;
     const { limit = 50, skip = 0 } = req.query;
 
-    Sentry.addBreadcrumb({
-      category: 'messages',
-      message: 'Fetching messages',
-      level: 'info',
-      data: { conversationId, limit, skip },
-    });
+    if (Sentry && typeof Sentry.addBreadcrumb === 'function') {
+      Sentry.addBreadcrumb({
+        category: 'messages',
+        message: 'Fetching messages',
+        level: 'info',
+        data: { conversationId, limit, skip },
+      });
+    }
 
     const conversation = await Conversation.findOne({
       _id: conversationId,
@@ -60,18 +61,20 @@ export const getMessages = async (req, res) => {
     conversation.unreadCount.set(req.user._id.toString(), 0);
     await conversation.save();
 
-    transaction.setStatus('ok');
-    transaction.finish();
+    if (transaction) transaction.setStatus('ok');
+    if (transaction) transaction.finish();
 
     res.json(messages.reverse());
   } catch (error) {
     console.error('Get messages error:', error);
-    transaction.setStatus('internal_error');
-    transaction.finish();
+    if (transaction) transaction.setStatus('internal_error');
+    if (transaction) transaction.finish();
 
-    Sentry.captureException(error, {
-      tags: { controller: 'message', action: 'getMessages' },
-    });
+    if (Sentry && typeof Sentry.captureException === 'function') {
+      Sentry.captureException(error, {
+        tags: { controller: 'message', action: 'getMessages' },
+      });
+    }
 
     if (error.response?.status === 403) {
       throw error;
@@ -82,20 +85,21 @@ export const getMessages = async (req, res) => {
 };
 
 export const sendMessage = async (req, res) => {
-  const transaction = Sentry.startTransaction({
-    op: 'message.send',
-    name: 'POST /api/messages',
-  });
+  const transaction = (Sentry && typeof Sentry.startTransaction === 'function')
+    ? Sentry.startTransaction({ op: 'message.send', name: 'POST /api/messages' })
+    : null;
 
   try {
     const { conversationId, content, mediaIds } = req.body;
 
-    Sentry.addBreadcrumb({
-      category: 'messages',
-      message: 'Sending message',
-      level: 'info',
-      data: { conversationId, hasContent: !!content, mediaCount: mediaIds?.length || 0 },
-    });
+    if (Sentry && typeof Sentry.addBreadcrumb === 'function') {
+      Sentry.addBreadcrumb({
+        category: 'messages',
+        message: 'Sending message',
+        level: 'info',
+        data: { conversationId, hasContent: !!content, mediaCount: mediaIds?.length || 0 },
+      });
+    }
 
     if (!conversationId) {
       return res.status(400).json({ message: 'Conversation ID and content are required' });
@@ -156,18 +160,20 @@ export const sendMessage = async (req, res) => {
     });
     await conversation.save();
 
-    transaction.setStatus('ok');
-    transaction.finish();
+    if (transaction) transaction.setStatus('ok');
+    if (transaction) transaction.finish();
 
     res.status(201).json(message);
   } catch (error) {
     console.error('Send message error:', error);
-    transaction.setStatus('internal_error');
-    transaction.finish();
+    if (transaction) transaction.setStatus('internal_error');
+    if (transaction) transaction.finish();
 
-    Sentry.captureException(error, {
-      tags: { controller: 'message', action: 'sendMessage' },
-    });
+    if (Sentry && typeof Sentry.captureException === 'function') {
+      Sentry.captureException(error, {
+        tags: { controller: 'message', action: 'sendMessage' },
+      });
+    }
 
     res.status(500).json({ message: 'Server error', error: error.message });
   }

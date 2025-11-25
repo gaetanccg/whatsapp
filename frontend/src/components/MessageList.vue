@@ -871,12 +871,16 @@ onMounted(() => {
     // Écouter les événements globaux
     window.addEventListener('click', handleGlobalClick);
     window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('messageAppended', onMessageAppended);
+    window.addEventListener('conversationMessagesLoaded', onConversationMessagesLoaded);
 });
 
 onUnmounted(() => {
     // Nettoyer les écouteurs d'événements
     window.removeEventListener('click', handleGlobalClick);
     window.removeEventListener('keydown', handleKeyDown);
+    window.removeEventListener('messageAppended', onMessageAppended);
+    window.removeEventListener('conversationMessagesLoaded', onConversationMessagesLoaded);
 });
 
 // ============================================================================
@@ -891,6 +895,58 @@ watch(() => chatStore.currentConversation, () => {
     scrollToBottom();
     closeContextMenu();
 });
+// Helpers pour les citations (reply)
+const isObjectId = (val) => {
+    return typeof val === 'string' || (val && typeof val === 'object' && val.$oid);
+};
+
+const getReplyAuthor = (reply) => {
+    if (!reply) return 'Message';
+    if (isObjectId(reply)) return 'Message';
+    return reply.sender?.username || 'Message';
+};
+
+const getReplySnippet = (reply) => {
+    if (!reply) return '';
+    if (isObjectId(reply)) return '';
+    const base = reply.content || (reply.media && reply.media.length ? `[${reply.media.length} média(s)]` : '');
+    if (!base) return '';
+    return base.length <= 60 ? base : (base.slice(0,57) + '…');
+};
+
+const AUTO_SCROLL_THRESHOLD = 160;
+
+function shouldAutoScroll(){
+    if (!messageContainer.value) return true;
+    const el = messageContainer.value.$el || messageContainer.value;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    return distanceFromBottom < AUTO_SCROLL_THRESHOLD;
+}
+
+function scrollToBottomSmooth(){
+    if (!messageContainer.value) return;
+    const el = messageContainer.value.$el || messageContainer.value;
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+}
+
+function onMessageAppended(e){
+    const msg = e.detail?.message;
+    if (!msg) return;
+    // Auto-scroll si message envoyé par soi OU si l’utilisateur était déjà proche du bas
+    const isOwn = msg.sender && (msg.sender._id === authStore.user?._id);
+    if (isOwn || shouldAutoScroll()) {
+        scrollToBottomSmooth();
+    }
+}
+
+function onConversationMessagesLoaded(e){
+    const convId = e.detail?.conversationId;
+    if (!convId) return;
+    if (chatStore.currentConversation && chatStore.currentConversation._id === convId){
+        // Forcer scroll tout en bas après rendu complet
+        nextTick(() => scrollToBottomSmooth());
+    }
+}
 </script>
 
 <style scoped>
