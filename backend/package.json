@@ -6,7 +6,9 @@
     "dev": "node --watch server.js",
     "start": "node server.js",
     "test": "NODE_ENV=test c8 mocha --timeout 10000 --exit tests/**/*.test.js",
-    "test:coverage": "c8 report --reporter=text-lcov"
+    "test:coverage": "c8 report --reporter=text-lcov",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
   },
   "dependencies": {
     "@sentry/node": "^7.120.4",
@@ -28,6 +30,7 @@
   "devDependencies": {
     "c8": "^9.0.0",
     "chai": "^4.3.10",
+    "eslint": "^9.39.1",
     "mocha": "^10.2.0",
     "socket.io-client": "^4.6.1",
     "supertest": "^6.3.3"

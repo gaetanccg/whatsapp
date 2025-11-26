@@ -383,7 +383,7 @@ GitHub Actions workflow:
   run: npm test
   env:
     NODE_ENV: test
-    MONGO_URI: ${{ secrets.MONGO_URI_TEST }}
+    MONGODB_URI: ${{ secrets.MONGODB_URI_TEST }}
     JWT_SECRET: ${{ secrets.JWT_SECRET }}
 ```
 
@@ -401,7 +401,7 @@ it('slow test', async function() {
 ### Database connection issues
 Ensure MongoDB is running and accessible:
 ```bash
-mongosh $MONGO_URI
+mongosh $MONGODB_URI
 ```
 
 ### Port conflicts

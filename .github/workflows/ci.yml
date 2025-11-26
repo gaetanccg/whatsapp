@@ -7,105 +7,164 @@ on:
     branches: [ main, develop ]
 
 jobs:
+  backend-lint:
+    runs-on: ubuntu-latest
+    name: Backend ESLint
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20.x
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: npm ci
+
+      - name: Run ESLint
+        working-directory: ./backend
+        run: npm run lint
+
   backend-test:
     runs-on: ubuntu-latest
+    name: Backend Tests
+    needs: backend-lint
 
     strategy:
       matrix:
-        node-version: [18.x, 20.x]
+        node-version: [ 18.x, 20.x ]
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-    - name: Setup Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v3
-      with:
-        node-version: ${{ matrix.node-version }}
-        cache: 'npm'
-        cache-dependency-path: backend/package.json
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
 
-    - name: Install backend dependencies
-      working-directory: ./backend
-      run: npm ci
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: npm ci
 
-    - name: Run backend tests
-      working-directory: ./backend
-      run: npm test
-      env:
-        NODE_ENV: test
-        MONGODB_URI: ${{ secrets.MONGODB_URI }}
-        JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      - name: Run backend tests
+        working-directory: ./backend
+        run: npm test
+        env:
+          NODE_ENV: test
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
 
-    - name: Upload backend coverage
-      uses: codecov/codecov-action@v3
-      with:
-        files: ./backend/coverage/lcov.info
-        flags: backend
+      - name: Upload backend coverage
+        if: matrix.node-version == '20.x'
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./backend/coverage/lcov.info
+          flags: backend
+        continue-on-error: true
+
+  frontend-lint:
+    runs-on: ubuntu-latest
+    name: Frontend ESLint
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20.x
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Run ESLint
+        working-directory: ./frontend
+        run: npm run lint
 
   frontend-test:
     runs-on: ubuntu-latest
+    name: Frontend Tests
+    needs: frontend-lint
 
     strategy:
       matrix:
-        node-version: [18.x, 20.x]
+        node-version: [ 18.x, 20.x ]
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-    - name: Setup Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v3
-      with:
-        node-version: ${{ matrix.node-version }}
-        cache: 'npm'
-        cache-dependency-path: frontend/package.json
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
 
-    - name: Install frontend dependencies
-      working-directory: ./frontend
-      run: npm ci
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: npm ci
 
-    - name: Run frontend tests
-      working-directory: ./frontend
-      run: npm test
-      env:
-        VITE_API_URL: http://localhost:5000/api
-        VITE_SOCKET_URL: http://localhost:5000
+      - name: Run frontend tests
+        working-directory: ./frontend
+        run: npm test
+        env:
+          VITE_API_URL: http://localhost:5000/api
+          VITE_SOCKET_URL: http://localhost:5000
 
-    - name: Build frontend
-      working-directory: ./frontend
-      run: npm run build
+      - name: Build frontend
+        working-directory: ./frontend
+        run: npm run build
 
-    - name: Upload frontend coverage
-      uses: codecov/codecov-action@v3
-      with:
-        files: ./frontend/coverage/lcov.info
-        flags: frontend
+      - name: Upload frontend coverage
+        if: matrix.node-version == '20.x'
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./frontend/coverage/lcov.info
+          flags: frontend
+        continue-on-error: true
 
-  lint:
+  docker-build:
     runs-on: ubuntu-latest
+    name: Docker Build Test
+    needs: [ backend-test, frontend-test ]
+    if: github.event_name == 'push'
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v3
-      with:
-        node-version: 20.x
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
 
-    - name: Install backend dependencies
-      working-directory: ./backend
-      run: npm ci
+      - name: Build backend image
+        uses: docker/build-push-action@v4
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: false
+          tags: whatsapp-backend:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-    - name: Install frontend dependencies
-      working-directory: ./frontend
-      run: npm ci
-
-    - name: Check backend for errors
-      working-directory: ./backend
-      run: node --check server.js
-
-    - name: Check frontend for errors
-      working-directory: ./frontend
-      run: npm run build
+      - name: Build frontend image
+        uses: docker/build-push-action@v4
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: false
+          tags: whatsapp-frontend:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

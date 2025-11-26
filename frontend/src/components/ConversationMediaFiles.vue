@@ -166,7 +166,7 @@ function formatSize(bytes) {
 }
 
 function download(m) {
-    window.open(`${import.meta.env.VITE_API_URL || 'http://localhost:5001/api'}/media/${m._id}`, '_blank');
+    window.open(`${import.meta.env.VITE_API_URL || '/api'}/media/${m._id}`, '_blank');
 }
 
 function close() {

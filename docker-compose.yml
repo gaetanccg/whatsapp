@@ -1,0 +1,48 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    container_name: whatsapp-backend
+    environment:
+      - MONGODB_URI=mongodb://root:example@mongo:27017/whatsapp?authSource=admin
+      - PORT=5000
+      - JWT_SECRET=ec0663d0ca97d383f0354ce29a492d81
+    depends_on:
+      - mongo
+    volumes:
+      - backend-uploads:/app/uploads
+    networks:
+      - app-network
+    expose:
+      - "5000"   # IMPORTANT: exposé uniquement au réseau docker, pas à l'hôte
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: whatsapp-frontend
+    ports:
+      - "8080:80"   # seul service exposé à l’extérieur
+    depends_on:
+      - backend
+    networks:
+      - app-network
+
+  mongo:
+    image: mongo
+    container_name: whatsapp-mongo
+    restart: always
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: example
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - app-network
+
+volumes:
+  mongo-data:
+  backend-uploads:
+
+networks:
+  app-network:
+    driver: bridge

@@ -12,14 +12,23 @@ class SocketService
             return this.socket;
         }
 
-        const socketUrl = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5001';
+        const socketUrl = import.meta.env.VITE_SOCKET_URL || '/socket.io';
 
-        this.socket = io(socketUrl, {
-            auth: {token},
+        const options = {
+            auth: { token },
             reconnection: true,
             reconnectionDelay: 1000,
             reconnectionAttempts: 5
-        });
+        };
+
+        // If socketUrl is a relative path (starts with '/'), pass it as `path` option
+        if (typeof socketUrl === 'string' && socketUrl.startsWith('/')) {
+            const path = socketUrl; // e.g. '/socket.io'
+            this.socket = io(undefined, { path, ...options });
+        } else {
+            // absolute URL (http(s)://...)
+            this.socket = io(socketUrl, options);
+        }
 
         this.socket.on('connect', () => {
             console.log('Socket connected');
