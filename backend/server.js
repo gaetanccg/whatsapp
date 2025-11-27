@@ -22,61 +22,18 @@ dotenv.config();
 const app = express();
 const httpServer = createServer(app);
 
-// Determine a valid frontend URL for CORS. If FRONTEND_URL is missing or contains
-// a placeholder like "<your-frontend-url-will-add-later>", fall back to localhost:5173
-let frontendUrl = process.env.FRONTEND_URL;
-if (!frontendUrl || frontendUrl.includes('<') || frontendUrl.trim() === '') {
-    frontendUrl = 'http://localhost:5173';
-}
+/* ============================================================
+   CORS — simplified for Nginx monolithic deployment
+   ------------------------------------------------------------
+   In the Docker+Nginx architecture, backend & frontend share
+   the same domain → no more cross-domain CORS required.
+===============================================================*/
 
-// Allow all CORS in non-production environments or when explicitly enabled
-const allowAllCors = process.env.NODE_ENV !== 'production' || process.env.ALLOW_ALL_CORS === 'true';
-
-if (process.env.SENTRY_DSN && process.env.NODE_ENV !== 'test') {
-    // Build integrations array carefully: some versions of the profiling package
-    // may not return an object compatible with Sentry's integration API.
-    const integrations = [];
-
-    try {
-        if (typeof nodeProfilingIntegration === 'function') {
-            const profiling = nodeProfilingIntegration();
-            if (profiling && typeof profiling.setupOnce === 'function') {
-                integrations.push(profiling);
-            } else {
-                console.warn('Profiling integration not compatible with the installed Sentry version — skipping profiling integration.');
-            }
-        }
-    } catch (err) {
-        console.warn('Error while initializing profiling integration, skipping it:', err.message || err);
-    }
-
-    Sentry.init({
-        dsn: process.env.SENTRY_DSN,
-        environment: process.env.NODE_ENV || 'development',
-        integrations,
-        tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
-        profilesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
-        beforeSend(event, hint) {
-            if (process.env.NODE_ENV === 'development') {
-                console.log('Sentry Event:', event);
-            }
-            return event;
-        }
-    });
-
-    app.use(Sentry.Handlers.requestHandler());
-    app.use(Sentry.Handlers.tracingHandler());
-}
+const allowAllCors = true;
 
 const corsOriginHandler = allowAllCors ? true : (origin, callback) => {
-    // Allow requests with no origin (like mobile apps or curl)
     if (!origin) return callback(null, true);
-    // Allow explicit configured frontend URL
-    if (origin === frontendUrl) return callback(null, true);
-    // Allow any localhost origin on any port for development convenience
-    if (origin.startsWith('http://localhost:')) return callback(null, true);
-    if (origin.startsWith('http://127.0.0.1:')) return callback(null, true);
-    return callback(new Error('Not allowed by CORS'));
+    return callback(null, true);
 };
 
 const corsOptions = {
@@ -92,14 +49,16 @@ const corsOptions = {
     credentials: true
 };
 
+/* ============================================================
+   Socket.IO — IMPORTANT
+   ------------------------------------------------------------
+   Nginx proxies /socket.io/ to this server.
+   No CORS needed, everything is same-domain.
+=============================================================== */
+
 const io = new Server(httpServer, {
     cors: {
-        origin: corsOriginHandler,
-        methods: [
-            'GET',
-            'POST',
-            'PATCH'
-        ],
+        origin: true,
         credentials: true
     }
 });
@@ -107,8 +66,40 @@ const io = new Server(httpServer, {
 // register io instance for controllers
 setIo(io);
 
+/* ============================================================
+   SENTRY
+=============================================================== */
+
+if (process.env.SENTRY_DSN && process.env.NODE_ENV !== 'test') {
+    const integrations = [];
+    try {
+        if (typeof nodeProfilingIntegration === 'function') {
+            const profiling = nodeProfilingIntegration();
+            if (profiling && typeof profiling.setupOnce === 'function') {
+                integrations.push(profiling);
+            }
+        }
+    } catch (err) {
+        console.warn('Profiling integration failed:', err);
+    }
+
+    Sentry.init({
+        dsn: process.env.SENTRY_DSN,
+        environment: process.env.NODE_ENV || 'development',
+        integrations,
+        tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
+        profilesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0
+    });
+
+    app.use(Sentry.Handlers.requestHandler());
+    app.use(Sentry.Handlers.tracingHandler());
+}
+
+/* ============================================================
+   MIDDLEWARES
+=============================================================== */
+
 app.use(cors(corsOptions));
-// Ensure preflight requests are handled
 app.options('*', cors(corsOptions));
 
 app.use(express.json({limit: '10mb'}));
@@ -116,6 +107,10 @@ app.use(express.urlencoded({
     extended: true,
     limit: '10mb'
 }));
+
+/* ============================================================
+   ROUTES
+=============================================================== */
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
@@ -133,19 +128,21 @@ app.get('/health', (req, res) => {
     res.json({
         status: 'OK',
         timestamp: new Date().toISOString(),
-        media: {
-            ffmpeg: isFfmpegAvailable()
-        }
+        media: {ffmpeg: isFfmpegAvailable()}
     });
 });
 
+/* ============================================================
+   SENTRY ERROR HANDLER
+=============================================================== */
+
 if (process.env.SENTRY_DSN && process.env.NODE_ENV !== 'test') {
-    app.use(Sentry.Handlers.errorHandler({
-        shouldHandleError(error) {
-            return true;
-        }
-    }));
+    app.use(Sentry.Handlers.errorHandler());
 }
+
+/* ============================================================
+   ERROR HANDLER
+=============================================================== */
 
 app.use((err, req, res, next) => {
     console.error(err.stack);
@@ -170,47 +167,37 @@ app.use((err, req, res, next) => {
     });
 });
 
+/* ============================================================
+   SOCKET SETUP
+=============================================================== */
+
 setupSocket(io);
 
-// Set default port to 5001 to avoid macOS reserved port conflicts like Control Center on 5000
-const PORT = process.env.PORT || 5001;
+/* ============================================================
+   START SERVER — FOR NGINX MONOLITHIC DEPLOY
+   ------------------------------------------------------------
+   PORT MUST BE 5000 (Nginx reverse proxy requires this)
+=============================================================== */
 
-const startServer = async(port) => {
+// Respecter la variable d'environnement PORT si fournie (fallback 5000)
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 5000;
+
+const startServer = async() => {
     try {
         await connectDB();
 
-        return await new Promise((resolve, reject) => {
-            const srv = httpServer.listen(port, () => {
-                console.log(`Server running on port ${port}`);
-                resolve(srv);
-            });
-
-            srv.on('error', (err) => {
-                reject(err);
-            });
+        httpServer.listen(PORT, '0.0.0.0', () => {
+            console.log(`Backend running on port ${PORT}`);
         });
+
     } catch (err) {
         console.error('Failed to start server:', err);
-        throw err;
+        process.exit(1);
     }
 };
 
 if (process.env.NODE_ENV !== 'test') {
-    startServer(PORT).catch(async(err) => {
-        if (err && err.code === 'EADDRINUSE') {
-            const fallbackPort = 5002;
-            console.warn(`Port ${PORT} in use, trying ${fallbackPort}...`);
-            try {
-                await startServer(fallbackPort);
-            } catch (err2) {
-                console.error('Failed to start on fallback port as well:', err2);
-                process.exit(1);
-            }
-        } else {
-            console.error('Server failed to start:', err);
-            process.exit(1);
-        }
-    });
+    startServer();
 }
 
 export {app, httpServer, io};
