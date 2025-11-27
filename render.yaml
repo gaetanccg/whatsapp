@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: whatsapp-monolith
+    env: docker
+    branch: main
+    dockerfilePath: Dockerfile
+    plan: starter
+    autoDeploy: true
+    healthCheckPath: /health
+    instances: 1
+    buildCommand: null
+    startCommand: null
+

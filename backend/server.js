@@ -16,6 +16,9 @@ import proxyRoutes from './routes/proxyRoutes.js';
 import {setIo} from './sockets/socketEmitter.js';
 import mediaRoutes from './routes/mediaRoutes.js';
 import {isFfmpegAvailable} from './utils/mediaProcessing.js';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 dotenv.config();
 
@@ -172,6 +175,25 @@ app.use((err, req, res, next) => {
 =============================================================== */
 
 setupSocket(io);
+
+/* ============================================================
+   STATIC FILES — FOR MONOLITHIC DOCKER DEPLOYMENT
+   ------------------------------------------------------------
+   Serve frontend static files (built React app) from backend.
+=============================================================== */
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const staticPath = path.join(__dirname, 'public'); // frontend build will be copied here in the monolith Dockerfile
+
+if (fs.existsSync(staticPath)) {
+    app.use(express.static(staticPath));
+
+    // SPA fallback for non-API routes
+    app.get(/^(?!\/api).*/, (req, res) => {
+        res.sendFile(path.join(staticPath, 'index.html'));
+    });
+}
 
 /* ============================================================
    START SERVER — FOR NGINX MONOLITHIC DEPLOY

@@ -1,46 +1,33 @@
-###########################################################
-# ---- FRONTEND BUILD (Vite / Vue) ----
-###########################################################
-FROM node:18 AS frontend-builder
+# Stage de build
+FROM node:18-alpine AS builder
+WORKDIR /app
 
-WORKDIR /app/frontend
-COPY frontend/package*.json ./
-RUN npm install
-COPY frontend/ .
-RUN npm run build
+# --- build frontend ---
+COPY frontend/package*.json frontend/
+RUN cd frontend && npm ci
+COPY frontend ./frontend
+RUN cd frontend && npm run build
 
+# --- installer dépendances backend (production) ---
+COPY backend/package*.json backend/
+RUN cd backend && npm ci --only=production
 
-###########################################################
-# ---- BACKEND BUILD (Node / Express / Socket.io) ----
-###########################################################
-FROM node:18 AS backend-builder
+# Copier tout le repo (nécessaire pour fichiers backend)
+COPY . .
 
+# Copier le 'dist' buildé du frontend dans backend/public
+RUN rm -rf backend/public || true && mv frontend/dist backend/public
+
+# Image finale
+FROM node:18-alpine AS runtime
 WORKDIR /app/backend
-COPY backend/package*.json ./
-RUN npm install --production
-COPY backend/ .
 
+# Copier le backend prêt depuis le builder
+COPY --from=builder /app/backend /app/backend
 
-###########################################################
-# ---- FINAL IMAGE: NGINX + NODE ----
-###########################################################
-FROM node:18
+ENV NODE_ENV=production
 
-# Install NGINX
-RUN apt-get update && apt-get install -y nginx && apt-get clean
+EXPOSE 5000
 
-# ----------- Copy backend -------------
-WORKDIR /app/backend
-COPY --from=backend-builder /app/backend ./
+CMD ["node", "server.js"]
 
-# ----------- Copy frontend static files -------------
-COPY --from=frontend-builder /app/frontend/dist /usr/share/nginx/html
-
-# ----------- Copy nginx config ----------
-COPY nginx.conf /etc/nginx/nginx.conf
-
-# ----------- Expose port 80 -------------
-EXPOSE 80
-
-# ----------- Start script: Nginx + Node -------------
-CMD service nginx start && node server.js
